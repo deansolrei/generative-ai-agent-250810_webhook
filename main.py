@@ -152,26 +152,33 @@ def select_visit_type_handler(session_id, req):
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     parameters = req.get("queryResult", {}).get("parameters", {})
-    # Assuming you set up @visit_type entity in Dialogflow
     visit_type = parameters.get("visit_type", "")
+
+    # Normalize the input for robust comparison
+    visit_type_normalized = visit_type.strip().lower()
+
     SessionManager.update(session_id, "visit_type", visit_type)
-    # Personalize message if you want based on visit_type
-    if visit_type.lower() == "initial assessment":
+
+    if visit_type_normalized in ["initial assessment"]:
         intro = (
             "I think setting up the initial assessment is a great idea. We’ll do our best to get you moving quickly.\n\n"
         )
-    elif visit_type.lower() == "phone consultation":
+    elif visit_type_normalized in ["phone consultation"]:
         intro = (
             "A phone consultation is a great way to get started. We’ll connect you with a provider soon.\n\n"
         )
     else:
-        intro = ""
+        # If user input doesn't match, ask again
+        text = (
+            "Sorry, I didn't catch your selection. Would you like an Initial Assessment or a Phone Consultation?"
+        )
+        suggestions = ["Phone Consultation", "Initial Assessment"]
+        return build_rich_response(text, suggestions)
 
     text = (
         f"{intro}Before we schedule your appointment, I’ll need a few things from you. "
         "Could you please give me your full name, including your first and last names?"
     )
-    # This intent should output the context for the name-collection step (handled in Dialogflow intent settings)
     return build_rich_response(text)
 
 
@@ -274,7 +281,7 @@ INTENT_HANDLERS = {
     "01_appointment_entry_route": appointment_entry_handler,
     "02_patient_type_selection": patient_type_selection_handler,   # <<<--- Add this!
     "03_new_patient_entry_route": new_patient_entry_route_handler,
-    "03_select_visit_type": select_visit_type_handler,
+    "03a_select_visit_type": select_visit_type_handler,
     "07_existing_patient_entry_route": existing_patient_entry_route_handler,
     "Default Fallback Intent": fallback_handler,
 
