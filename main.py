@@ -124,6 +124,18 @@ def patient_type_selection_handler(session_id, req):
         return build_rich_response(text, suggestions)
 
 
+def existing_patient_entry_route_handler(session_id, req):
+    logging.debug("IN existing_patient_entry_route_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    SessionManager.update(session_id, "existing_patient_entry", True)
+    text = (
+        "Welcome back, I can help to get you scheduled. I just need a little bit of information from you. Could you please tell me your full name, first and last?"
+    )
+    # No suggestions/buttons at this point, just collecting name
+    return build_rich_response(text)
+
+
 def new_patient_entry_route_handler(session_id, req):
     logging.debug("IN new_patient_entry_route_handler")
     logging.debug("parameters: %s", req.get(
@@ -179,18 +191,6 @@ def select_visit_type_handler(session_id, req):
         f"{intro}Before we schedule your appointment, I’ll need a few things from you. "
         "Could you please give me your full name, including your first and last names?"
     )
-    return build_rich_response(text)
-
-
-def existing_patient_entry_route_handler(session_id, req):
-    logging.debug("IN existing_patient_entry_route_handler")
-    logging.debug("parameters: %s", req.get(
-        "queryResult", {}).get("parameters", {}))
-    SessionManager.update(session_id, "existing_patient_entry", True)
-    text = (
-        "Welcome back, I can help to get you scheduled. I just need a little bit of information from you. Could you please tell me your full name, first and last?"
-    )
-    # No suggestions/buttons at this point, just collecting name
     return build_rich_response(text)
 
 
