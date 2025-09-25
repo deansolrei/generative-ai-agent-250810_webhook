@@ -76,6 +76,20 @@ def welcome_handler(session_id, req):
         "If this is an emergency, please call 911 or 988.\n"
         "I'm Shiela, your AI assistant. How can I help you today?"
     )
+    suggestions = [
+        "Schedule appointment",
+        "Prescription question",
+        "Insurance/Billing",
+        "Provider question"
+    ]
+    return build_rich_response(text, suggestions)
+
+    SessionManager.update(session_id, "welcomed", True)
+    text = (
+        "👋 Welcome to Solrei Behavioral Health!\n"
+        "If this is an emergency, please call 911 or 988.\n"
+        "I'm Shiela, your AI assistant. How can I help you today?"
+    )
     # Your new buttons
     suggestions = [
         "Appointments",
@@ -104,8 +118,8 @@ def appointment_entry_handler(session_id, req):
     return build_rich_response(text, suggestions)
 
 
-def patient_type_selection_handler(session_id, req):
-    logging.debug("IN patient_type_selection_handler")
+def patient_type_select_handler(session_id, req):
+    logging.debug("IN patient_type_select_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     # Get patient_type parameter from Dialogflow entities
@@ -113,10 +127,10 @@ def patient_type_selection_handler(session_id, req):
     patient_type = parameters.get("patient_type", "").lower()
     if patient_type in ["new", "new patient"]:
         # Route to new patient entry
-        return new_patient_entry_route_handler(session_id, req)
+        return new_patient_entry_handler(session_id, req)
     elif patient_type in ["existing", "returning", "existing patient"]:
         # Route to existing patient entry
-        return existing_patient_entry_route_handler(session_id, req)
+        return existing_patient_entry_handler(session_id, req)
     else:
         # If not recognized, fallback
         text = "Are you a new patient or an existing patient?"
@@ -124,8 +138,8 @@ def patient_type_selection_handler(session_id, req):
         return build_rich_response(text, suggestions)
 
 
-def existing_patient_entry_route_handler(session_id, req):
-    logging.debug("IN existing_patient_entry_route_handler")
+def existing_patient_entry_handler(session_id, req):
+    logging.debug("IN existing_patient_entry_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     SessionManager.update(session_id, "existing_patient_entry", True)
@@ -136,8 +150,8 @@ def existing_patient_entry_route_handler(session_id, req):
     return build_rich_response(text)
 
 
-def new_patient_entry_route_handler(session_id, req):
-    logging.debug("IN new_patient_entry_route_handler")
+def new_patient_entry_handler(session_id, req):
+    logging.debug("IN new_patient_entry_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     SessionManager.update(session_id, "new_patient_entry", True)
@@ -159,8 +173,8 @@ def new_patient_entry_route_handler(session_id, req):
     return build_rich_response(text, suggestions)
 
 
-def select_visit_type_handler(session_id, req):
-    logging.debug("IN select_visit_type_handler")
+def visit_type_select_handler(session_id, req):
+    logging.debug("IN visit_type_select_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     parameters = req.get("queryResult", {}).get("parameters", {})
@@ -194,8 +208,8 @@ def select_visit_type_handler(session_id, req):
     return build_rich_response(text)
 
 
-def new_patient_name_handler(session_id, req):
-    logging.debug("IN new_patient_name_handler")
+def new_patient_name_collect_handler(session_id, req):
+    logging.debug("IN new_patient_name_collect_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     parameters = req.get("queryResult", {}).get("parameters", {})
@@ -210,8 +224,8 @@ def new_patient_name_handler(session_id, req):
     return build_rich_response(text)
 
 
-def new_patient_state_handler(session_id, req):
-    logging.debug("IN new_patient_state_handler")
+def new_patient_state_collect_handler(session_id, req):
+    logging.debug("IN new_patient_state_collect_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     parameters = req.get("queryResult", {}).get("parameters", {})
@@ -224,14 +238,14 @@ def new_patient_state_handler(session_id, req):
     # Check if state is eligible
     if state in LICENSED_STATES or state.title() in LICENSED_STATES.values():
         # Route to insurance collection
-        return new_patient_insurance_handler(session_id, req)
+        return new_patient_insurance_collect_handler(session_id, req)
     else:
         # Route to not eligible state handler
-        return not_eligible_state_handler(session_id, req)
+        return new_patient_not_eligible_state_handler(session_id, req)
 
 
-def new_patient_insurance_handler(session_id, req):
-    logging.debug("IN new_patient_insurance_handler")
+def new_patient_insurance_collect_handler(session_id, req):
+    logging.debug("IN new_patient_insurance_collect_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     parameters = req.get("queryResult", {}).get("parameters", {})
@@ -246,8 +260,8 @@ def new_patient_insurance_handler(session_id, req):
     return build_rich_response(text)
 
 
-def not_eligible_state_handler(session_id, req):
-    logging.debug("IN not_eligible_state_handler")
+def new_patient_not_eligible_state_handler(session_id, req):
+    logging.debug("IN new_patient_not_eligible_state_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     parameters = req.get("queryResult", {}).get("parameters", {})
@@ -277,78 +291,77 @@ def fallback_handler(session_id, req):
 # --- Intent Routing ---
 
 INTENT_HANDLERS = {
-    "00_default_welcome_intent": welcome_handler,
-    "01_appointment_entry_route": appointment_entry_handler,
-    "02_patient_type_selection": patient_type_selection_handler,   # <<<--- Add this!
-    "03_new_patient_entry_route": new_patient_entry_route_handler,
-    "03a_select_visit_type": select_visit_type_handler,
-    "07_existing_patient_entry_route": existing_patient_entry_route_handler,
-    "Default Fallback Intent": fallback_handler,
-
-    "03a_new_patient_name_collection": new_patient_name_handler,
-    "03b_new_patient_state_collection": new_patient_state_handler,
-    "03bx_new_patient_not_eligible_state": not_eligible_state_handler,
-    "03c_new_patient_insurance_collection": new_patient_insurance_handler,
-    # "03cx_new_patient_not_eligible_insurance": not_eligible_insurance_handler,
-    # "03d_new_patient_reason_for_visit": new_patient_reason_for_visit_handler,
-    # "04_new_patient__visit_type_selection": new_patient_visit_type_selection_handler,
-    # "05_consult_entry_route": consult_entry_route_handler,
-    # "05a_consult_phone_provider_select": consult_phone_provider_select_handler,
-    # "05b_consult_phone_collection": consult_phone_collection_handler,
-    # "06_initial_assessment_entry_route": initial_assessment_entry_route_handler,
-    # "06a_initial_assessment_provider_select": initial_assessment_provider_select_handler,
-    # "06b_initial_assessment_schedule": initial_assessment_schedule_handler,
-    # "06c_initial_assessment_phone_collect": initial_assessment_phone_collect_handler,
-    # "06d_initial_assessment__confirm_else": initial_assessment__confirm_else_handler,
-    # "07a_patient_reason_for_visit": patient_reason_for_visit_handler,
-    # "07b_patient_name_collection": patient_name_handler,
-    # "07c_patient_provider": patient_provider_handler,
-    # "07d_patient_schedule": patient_schedule_handler,
-    # "07e_patient_appointment_confirm_else": patient_appointment_confirm_else_handler,
-    # "08_prescription_entry_route": prescription_entry_route_handler,
-    # "09_refill_request": refill_request_handler,
-    # "09a_refill_appointment": refill_appointment_handler,
-    # "09b_refill_urgent": refill_urgent_handler,
-    # "09c_refill_message_else": refill_message_else_handler,
-    # "10_prescription_question": prescription_question_handler,
-    # "11_out_of_stock_intent": out_of_stock_handler,
-    # "11a_out_of_stock_advice_else": out_of_stock_advice_else_handler,
-    # "12_no_prescription": no_prescription_handler,
-    # "12a_no_prescription_advice_else": no_prescription_advice_else_handler,
-    # "13_provider_request_entry_route": provider_request_entry_route_handler,
-    # "13a_provider_select": provider_select_handler,
-    # "14_jodene_select": jodene_select_handler,
-    # "14a_jodene_question": jodene_question_handler,
-    # "14b_jodene_message_else": jodene_message_else_handler,
-    # "15_katie_select": katie_select_handler,
-    # "15a_katie_question": katie_question_handler,
-    # "15b_katie_message_else": katie_message_else_handler,
-    # "16_megan_select": megan_select_handler,
-    # "16a_megan_question": megan_question_handler,
-    # "16b_megan_message_else": megan_message_else_handler,
-    # "17_insurance_entry_route": insurance_entry_route_handler,
-    # "18_insurance_claim_status": insurance_claim_status_handler,
-    # "18a_insurance_claim_name": insurance_claim_name_handler,
-    # "18b_insurance_claim_dos": insurance_claim_dos_handler,
-    # "18c_insurance_claim_phone": insurance_claim_phone_handler,
-    # "18d_insurance_claim_will_return_else": insurance_claim_will_return_else_handler,
-    # "19_insurance_coverage_inquiry": insurance_coverage_inquiry_handler,
-    # "19a_insurance_coverage_name": insurance_coverage_name_handler,
-    # "19b_insurance_policy_collect": insurance_policy_collect_handler,
-    # "19c_insurance_collect_phone_else": insurance_collect_phone_else_handler,
-    # "20_billing_entry_route": billing_entry_route_handler,
-    # "21_billing_question": billing_question_handler,
-    # "21a_billing_question_message_else": billing_question_message_else_handler,
-    # "22_billing_rates": billing_rates_handler,
-    # "22a_billing_rates_info_else": billing_rates_info_else_handler,
-    # "23_clinic_hours": clinic_hours_handler,
-    # "23a_clinic_hours_info_else": clinic_hours_info_else_handler,
-    # "90_small_talk.goodbye": small_talk_goodbye_handler,
-    # "90_small_talk.hours": small_talk_hours_handler,
-    # "90_small_talk.thanks": small_talk_thanks_handler,
-    # "95_view_licensed_states": view_licensed_states_handler,
-    # "99_no_other_questions": no_other_questions_handler,
-    # "z100_request_human": request_human_handler,
+    "welcome": welcome_handler,
+    "appointment_entry": appointment_entry_handler,
+    "patient_type_select": patient_type_select_handler,
+    "new_patient_entry": new_patient_entry_handler,
+    "visit_type_select": visit_type_select_handler,
+    "existing_patient_entry": existing_patient_entry_handler,
+    "fallback": fallback_handler,
+    "new_patient_name_collect": new_patient_name_collect_handler,
+    "new_patient_state_collect": new_patient_state_collect_handler,
+    "new_patient_not_eligible_state": new_patient_not_eligible_state_handler,
+    "new_patient_insurance_collect": new_patient_insurance_collect_handler,
+    # "new_patient_not_eligible_insurance": new_patient_not_eligible_insurance_handler,
+    # "new_patient_reason_for_visit": new_patient_reason_for_visit_handler,
+    # "new_patient_visit_type_select": new_patient_visit_type_select_handler,
+    # "consult_entry": consult_entry_handler,
+    # "consult_phone_provider_select": consult_phone_provider_select_handler,
+    # "consult_phone_collect": consult_phone_collect_handler,
+    # "assessment_entry": assessment_entry_handler,
+    # "assessment_provider_select": assessment_provider_select_handler,
+    # "assessment_schedule": assessment_schedule_handler,
+    # "assessment_phone_collect": assessment_phone_collect_handler,
+    # "assessment_confirm_else": assessment_confirm_else_handler,
+    # "patient_reason_for_visit": patient_reason_for_visit_handler,
+    # "patient_name_collect": patient_name_collect_handler,
+    # "patient_provider": patient_provider_handler,
+    # "patient_schedule": patient_schedule_handler,
+    # "patient_appointment_confirm_else": patient_appointment_confirm_else_handler,
+    # "prescription_entry": prescription_entry_handler,
+    # "refill_request": refill_request_handler,
+    # "refill_appointment": refill_appointment_handler,
+    # "refill_urgent": refill_urgent_handler,
+    # "refill_message_else": refill_message_else_handler,
+    # "prescription_question": prescription_question_handler,
+    # "out_of_stock": out_of_stock_handler,
+    # "out_of_stock_advice_else": out_of_stock_advice_else_handler,
+    # "no_prescription": no_prescription_handler,
+    # "no_prescription_advice_else": no_prescription_advice_else_handler,
+    # "provider_request_entry": provider_request_entry_route_handler,
+    # "provider_select": provider_select_handler,
+    # "jodene_select": jodene_select_handler,
+    # "jodene_questionn": jodene_question_handler,
+    # "jodene_message_else": jodene_message_else_handler,
+    # "katie_select": katie_select_handler,
+    # "katie_question": katie_question_handler,
+    # "katie_message_else": katie_message_else_handler,
+    # "megan_select": megan_select_handler,
+    # "megan_question": megan_question_handler,
+    # "megan_message_else": megan_message_else_handler,
+    # "insurance_entry": insurance_entry_handler,
+    # "insurance_claim_status": insurance_claim_status_handler,
+    # "insurance_claim_name": insurance_claim_name_handler,
+    # "insurance_claim_dos": insurance_claim_dos_handler,
+    # "insurance_claim_phone": insurance_claim_phone_handler,
+    # "insurance_claim_will_return_else": insurance_claim_will_return_else_handler,
+    # "insurance_coverage_inquiry": insurance_coverage_inquiry_handler,
+    # "insurance_coverage_name": insurance_coverage_name_handler,
+    # "insurance_policy_collect": insurance_policy_collect_handler,
+    # "insurance_collect_phone_else": insurance_collect_phone_else_handler,
+    # "billing_entry": billing_entry_handler,
+    # "billing_question": billing_question_handler,
+    # "billing_question_message_else": billing_question_message_else_handler,
+    # "billing_rates": billing_rates_handler,
+    # "billing_rates_info_else": billing_rates_info_else_handler,
+    # "clinic_hours": clinic_hours_handler,
+    # "clinic_hours_info_else": clinic_hours_info_else_handler,
+    # "small_talk.goodbye": small_talk_goodbye_handler,
+    # "small_talk.hours": small_talk_hours_handler,
+    # "small_talk.thanks": small_talk_thanks_handler,
+    # "view_licensed_states": view_licensed_states_handler,
+    # "no_other_questions": no_other_questions_handler,
+    # "request_human": request_human_handler,
 
 
     # ... add other handlers as needed ...
