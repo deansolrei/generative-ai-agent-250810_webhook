@@ -11,31 +11,7 @@ logger = logging.getLogger(__name__)
 
 # --- Config: Providers, Specialties, etc. ---
 PROVIDERS = [
-    {"name": "Jodene Jensen", "specialties": [
-        "anxiety", "depression", "trauma"]},
-    {"name": "Katherine Robins", "specialties": ["bipolar", "mood disorders"]},
-    {"name": "Megan Ramirez", "specialties": ["adolescent", "family therapy"]},
-    {"name": "Soonest Available", "specialties": []}
-]
-
-INSURANCE_ACCEPTED = [
-    "Aetna", "Cigna", "UnitedHealthcare", "BlueCross", "BCBS", "Blue Cross", "Humana",
-    "Medicare", "Medicaid", "Tricare", "Optum", "Oscar", "Oxford", "Self-Pay", "Other"
-]
-
-LICENSED_STATES = {
-    "FL": "Florida",
-    "CA": "California",
-    "NY": "New York",
-    "TX": "Texas",
-    "WA": "Washington"
-}
-
-APPOINTMENT_TIMES = [
-    {"date": "2025-09-28", "time": "10:00 AM"},
-    {"date": "2025-09-28", "time": "2:00 PM"},
-    {"date": "2025-09-29", "time": "11:00 AM"},
-    {"date": "2025-09-29", "time": "3:00 PM"}
+    "Jodene Jensen", "Katie Robins", "Megan Ramirez", "Soonest Available"
 ]
 
 APPOINTMENT_TIMES = [
@@ -274,7 +250,7 @@ def webhook():
         text = (
             f"Excellent! We have providers who are licensed to provide care in {state}. "
             "Who is your health insurance carrier?\n"
-            "If you see your insurance company listedyou can select the button. "
+            "If you see your insurance company listed, you can select the button. "
             "If you don’t see your insurance provider, that does not necessarily mean that we are not in-network for you. "
             "Please provide us with that information and we will be able to collect that information and let you know."
         )
