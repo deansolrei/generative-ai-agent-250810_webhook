@@ -76,28 +76,14 @@ def welcome_handler(session_id, req):
         "If this is an emergency, please call 911 or 988.\n"
         "I'm Shiela, your AI assistant. How can I help you today?"
     )
-    suggestions = [
-        "Schedule appointment",
-        "Prescription question",
-        "Insurance/Billing",
-        "Provider question"
-    ]
-    return build_rich_response(text, suggestions)
-
-    SessionManager.update(session_id, "welcomed", True)
-    text = (
-        "👋 Welcome to Solrei Behavioral Health!\n"
-        "If this is an emergency, please call 911 or 988.\n"
-        "I'm Shiela, your AI assistant. How can I help you today?"
-    )
-    # Your new buttons
+    # Updated selectable buttons
     suggestions = [
         "Appointments",
+        "Clinic Hours",
         "Prescriptions",
         "Insurance Inquiry",
         "Billing Question",
-        "Provider message",
-        "Clinic Hours",
+        "Provider Message",
         "General Questions"
     ]
     return build_rich_response(text, suggestions)
