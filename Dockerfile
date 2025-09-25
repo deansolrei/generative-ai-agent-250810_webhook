@@ -1,17 +1,17 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
+# Set working directory
 WORKDIR /app
 
-# Ensure your service_account_key.json is in the same directory as your Dockerfile
-# when you build the image.
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# --- ADD THIS LINE ---
-
-# --- END ADDITION ---
-
+# Copy all app files
 COPY . .
 
-# Cloud Run expects PORT environment variable
+# Cloud Run sets the PORT environment variable
+ENV PORT 8080
+
+# Run Gunicorn with recommended settings for Cloud Run
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
