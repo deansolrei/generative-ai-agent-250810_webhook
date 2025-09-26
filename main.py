@@ -5,9 +5,20 @@ from datetime import datetime
 import json
 import re
 
+from flask import Flask, request, jsonify
+
 app = Flask(__name__)
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    # your code here
+    return jsonify({"fulfillmentText": "Welcome to Solrei Behavioral Health!"})
+
+
+if __name__ == "__main__":
+    app.run()
+
 
 # --- Config: Providers, Specialties, etc. ---
 PROVIDERS = [
@@ -99,6 +110,14 @@ def make_response(text, buttons=None, output_contexts=None):
     if output_contexts:
         fulfillment["outputContexts"] = output_contexts
     return jsonify(fulfillment)
+
+# @app.route("/webhook", methods=["POST"])
+# def webhook():
+#     req = request.get_json()
+#     intent_name = req.get("queryResult", {}).get(
+#         "intent", {}).get("displayName", "")
+#     session = req.get("session", "")
+#     session_id = session.split("/")[-1] if "/" in session else session
 
 
 @app.route("/webhook", methods=["POST"])
@@ -782,18 +801,9 @@ INTENT_HANDLERS = {
 
 # --- Webhook Route ---
 
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    req = request.get_json()
-    intent_name = req.get("queryResult", {}).get(
-        "intent", {}).get("displayName", "")
-    session = req.get("session", "")
-    session_id = session.split("/")[-1] if "/" in session else session
-
-    # Emergency detection (priority)
-    query_text = req.get("queryResult", {}).get("queryText", "").lower()
-    if any(word in query_text for word in ["suicide", "urgent", "emergency", "crisis", "988", "911"]):
+  # Emergency detection (priority)
+  query_text = req.get("queryResult", {}).get("queryText", "").lower()
+   if any(word in query_text for word in ["suicide", "urgent", "emergency", "crisis", "988", "911"]):
         text = ("⚠️ If you are experiencing a medical emergency, please call 911 or 988 immediately.\n\n"
                 "For mental health crisis, you can call or text 988 for the Suicide & Crisis Lifeline.")
         return jsonify(build_rich_response(text))
