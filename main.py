@@ -4,30 +4,23 @@ from flask import Flask, request, jsonify
 from datetime import datetime
 import json
 import re
-from collections import defaultdict
 
 app = Flask(__name__)
-
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # --- Config: Providers, Specialties, etc. ---
 PROVIDERS = [
-    "Jodene Jensen", "Katie Robins", "Megan Ramirez", "Soonest Available"
+    {"name": "Jodene Jensen", "specialties": [
+        "anxiety", "depression", "trauma"]},
+    {"name": "Katherine Robins", "specialties": ["bipolar", "mood disorders"]},
+    {"name": "Megan Ramirez", "specialties": ["adolescent", "family therapy"]},
 ]
+INSURANCE_ACCEPTED = ["aetna", "cigna", "united", "uhc", "unitedhealthcare", "bluecross", "bcbs",
+                      "blue cross", "humana", "medicare", "medicaid", "tricare", "optum",
+                      "oscar", "oxford", "self-pay", "other"]
 
-APPOINTMENT_TIMES = [
-    {"date": "2025-09-28", "time": "10:00 AM"},
-    {"date": "2025-09-28", "time": "2:00 PM"},
-    {"date": "2025-09-29", "time": "11:00 AM"},
-    {"date": "2025-09-29", "time": "3:00 PM"}
-]
-
-
-INSURANCE_COMPANIES = [
-    "Aetna", "Blue Cross Blue Shield", "Cigna", "Oscar", "Oxford", "United Healthcare"
-]
-
-
-ELIGIBLE_STATES = {
+LICENSED_STATES = {
     "alaska": "AK", "arizona": "AZ", "colorado": "CO", "florida": "FL",
     "hawaii": "HI", "idaho": "ID", "iowa": "IA", "kentucky": "KY",
     "maine": "ME", "maryland": "MD", "minnesota": "MN", "montana": "MT",
@@ -76,404 +69,279 @@ def build_rich_response(text, suggestions=None, cards=None):
 # --- Intent Handlers ---
 
 
-def make_suggestions(buttons):
-    return [{"text": b} for b in buttons]
-
-
-def make_response(text, buttons=None, output_contexts=None):
-    fulfillment = {
-        "fulfillmentMessages": [
-            {"text": {"text": [text]}}
-        ]
-    }
-    if buttons:
-        fulfillment["fulfillmentMessages"].append({
-            "payload": {
-                "richContent": [
-                    [
-                        {"type": "chips", "options": make_suggestions(buttons)}
-                    ]
-                ]
-            }
-        })
-    if output_contexts:
-        fulfillment["outputContexts"] = output_contexts
-    return jsonify(fulfillment)
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
-
-
-# --- Intent Routing ---
-
 def welcome_handler(session_id, req):
+    SessionManager.update(session_id, "welcomed", True)
     text = (
-        "Welcome to Solrei Behavioral Health!\n"
-        "If this is an emergency, please call 911 or 988, or text “NAMI” to 62640.\n"
-        "I'm Amy, your AI assistant. How can I help you today?\n"
-        "You can select one of the buttons, or just let me know how I can help you."
+        "👋 Welcome to Solrei Behavioral Health!\n"
+        "If this is an emergency, please call 911 or 988.\n"
+        "I'm Rianna, your AI assistant. How can I help you today?"
     )
-    buttons = [
-        "Appointments", "Clinic Hours", "Prescriptions", "Insurance Inquiries",
-        "Billing Questions", "Provider Messages", "General Questions"
+    # Your new buttons
+    suggestions = [
+        "Appointments",
+        "Prescriptions",
+        "Insurance Inquiry",
+        "Billing Question",
+        "Provider message",
+        "Clinic Hours",
+        "General Questions"
     ]
-    return build_rich_response(text, buttons)
+    return build_rich_response(text, suggestions)
 
 
-def appointment_select_new_existing_handler(session_id, req):
+def appointment_entry_handler(session_id, req):
+    logging.debug("IN appointment_entry_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    SessionManager.update(session_id, "appointment_entry", True)
     text = (
-        "Excellent! I can help you with scheduling an appointment.\n"
-        "Are you a current patient of the clinic or are you a new patient "
-        "looking to set up an appointment with a new provider?"
+        "Yes, I can certainly help you with that! Are you new to our clinic or are you an existing patient, continuing care with one of our providers?"
     )
-    buttons = ["Existing Patient", "New Patient"]
-    return build_rich_response(text, buttons)
+    suggestions = [
+        "New Patient",
+        "Existing Patient"
+    ]
+    return build_rich_response(text, suggestions)
+
+
+def patient_type_selection_handler(session_id, req):
+    logging.debug("IN patient_type_selection_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    # Get patient_type parameter from Dialogflow entities
+    parameters = req.get("queryResult", {}).get("parameters", {})
+    patient_type = parameters.get("patient_type", "").lower()
+    if patient_type in ["new", "new patient"]:
+        # Route to new patient entry
+        return new_patient_select_consult_assessment_handler(session_id, req)
+    elif patient_type in ["existing", "returning", "existing patient"]:
+        # Route to existing patient entry
+        return existing_patient_entry_route_handler(session_id, req)
+    else:
+        # If not recognized, fallback
+        text = "Are you a new patient or an existing patient?"
+        suggestions = ["New Patient", "Existing Patient"]
+        return build_rich_response(text, suggestions)
 
 
 def new_patient_select_consult_assessment_handler(session_id, req):
+    """
+    Handler for the 'new_patient_select_consult_assessment' intent.
+    This function prompts the user to select between a phone consultation or an initial assessment.
+    """
+    logging.debug("IN new_patient_select_consult_assessment_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
     text = (
-        "Welcome, we are glad that you have reached out to us.\n"
-        "I can get the process started. We offer two options for new patients:\n"
-        "Free phone consultation\n"
-        "Initial assessment\n\n"
-        "The free phone consultation is not a medical or clinical visit; "
-        "it is a brief 15 minute phone call intended to help you and the provider "
-        "determine if you are a good fit for each other.\n\n"
-        "The initial assessment is a clinical visit where the provider will conduct a full assessment, "
-        "and together with you, will create a treatment plan for going forward. "
-        "Sometimes prescriptions are written at this appointment. "
-        "It is a way to get you started as quickly as possible.\n\n"
-        "Which appointment type do you prefer?"
+        "We offer two options for new patients:\n\n"
+        "1️⃣  **Free 15-minute phone consultation**\n"
+        "    - Not a clinical visit\n"
+        "    - Helps you and the provider determine if you are a good fit for each other\n\n"
+        "2️⃣  **55-minute initial assessment**\n"
+        "    - This is a clinical visit\n"
+        "    - May allow you to schedule an appointment as soon as one is available\n\n"
+        "What would be your preference?"
     )
-    buttons = ["Free Phone Consultation", "Initial Assessment"]
-    return build_rich_response(text, buttons)
+    suggestions = [
+        "Phone Consultation",
+        "Initial Assessment"
+    ]
+    return build_rich_response(text, suggestions)
 
 
-def assessment_collect_name_handler(session_id, req):
+def select_visit_type_handler(session_id, req):
+    logging.debug("IN select_visit_type_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    parameters = req.get("queryResult", {}).get("parameters", {})
+    visit_type = parameters.get("visit_type", "")
+
+    # Normalize the input for robust comparison
+    visit_type_normalized = visit_type.strip().lower()
+
+    SessionManager.update(session_id, "visit_type", visit_type)
+
+    if visit_type_normalized in ["initial assessment"]:
+        intro = (
+            "I think setting up the initial assessment is a great idea. We’ll do our best to get you moving quickly.\n\n"
+            "Before we schedule your appointment, I’ll need a few things from you. These will help us determine if any of our providers would be able to see you. "
+            "If for some reason we don’t have a provider who would be able to see you, we can save you some time by getting this info now.\n\n"
+        )
+    elif visit_type_normalized in ["phone consultation"]:
+        intro = (
+            "A phone consultation is a nice approach, especially since there is no cost to you.\n"
+            "If you are certain that you don’t want to go directly to scheduling an appointment,\n"
+            "I will help with scheduling the free phone consultation for you.\n"
+            "If you think you might rather schedule an intake assessment, you can still do that,\n"
+            "Just say, “schedule assessment” and I can help you with that.\n\n"
+            "Let’s get you set up for the phone consultation!\n\n"
+        )
+    else:
+        # If user input doesn't match, ask again
+        text = (
+            "Sorry, I didn't catch your selection. Would you like an Initial Assessment or a Phone Consultation?"
+        )
+        suggestions = ["Phone Consultation", "Initial Assessment"]
+        return build_rich_response(text, suggestions)
+
     text = (
-        "I think setting up the initial assessment is a great idea.\n"
-        "We’ll do our best to get you moving quickly.\n"
-        "In order to provide the most flexibility and convenience for our patients, "
-        "we offer primarily telehealth appointments. Visits are conducted as video appointments and are HIPAA compliant.\n"
-        "We provide in-person appointments when necessary.\n"
-        "If virtual visits work best for you, I will help you with scheduling a telehealth appointment.\n"
-        "Can you provide me with your full name, first and last please?"
+        f"{intro}Before we schedule your appointment, I’ll need a few things from you. "
+        "Could you please give me your full name, including your first and last names?"
     )
     return build_rich_response(text)
 
 
-def consult_collect_name_handler(session_id, req):
+def existing_patient_entry_route_handler(session_id, req):
+    logging.debug("IN existing_patient_entry_route_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    SessionManager.update(session_id, "existing_patient_entry", True)
     text = (
-        "A phone consultation is a nice approach, especially since there is no cost to you.\n"
-        "If you are certain that you don’t want to go directly to scheduling an appointment,\n"
-        "I will help with scheduling the free phone consultation for you.\n"
-        "If you think you might rather schedule an intake assessment, you can still do that,\n"
-        "Just say, 'schedule assessment' and I can help you with that.\n\n"
-        "Let’s get you set up for the phone consultation!\n"
-        "Can you provide me with your full name, first and last please?"
+        "Welcome back, I can help to get you scheduled. I just need a little bit of information from you. Could you please tell me your full name, first and last?"
     )
-    buttons = ["Initial Assessment"]
+    # No suggestions/buttons at this point, just collecting name
     return build_rich_response(text)
 
 
 def assessment_collect_state_handler(session_id, req):
-    first_name = req.get("queryResult", {}).get(
-        "parameters", {}).get("given-name", "")
-    text = (
-        f"Thank you {first_name}! I am going to ask you just a few more questions "
-        "so we can determine if we are able to provide you care.\n"
-        "We have providers in a variety of states, what state do you reside in?"
-    )
-    return build_rich_response(text)
+    logging.debug("IN assessment_collect_state_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    parameters = req.get("queryResult", {}).get("parameters", {})
+    full_name = parameters.get("person", "") or parameters.get("name", "")
+    state = parameters.get("state", "").lower()
+    first_name = full_name.split()[0].capitalize() if full_name else "there"
+    SessionManager.update(session_id, "new_patient_full_name", full_name)
+    SessionManager.update(session_id, "new_patient_state", state)
+
+    # Check if state is eligible
+    if state in LICENSED_STATES or state.title() in LICENSED_STATES.values():
+        # Route to insurance collection
+        return assessment_collect_insurance_handler(session_id, req)
+    else:
+        # Route to not eligible state handler
+        return assessment_not_eligible_state_handler(session_id, req)
 
 
-def consult_collect_state_handler(session_id, req):
-    first_name = req.get("queryResult", {}).get(
-        "parameters", {}).get("given-name", "")
+def assessment_collect_insurance_handler(session_id, req):
+    logging.debug("IN assessment_collect_insurance_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    parameters = req.get("queryResult", {}).get("parameters", {})
+    state = parameters.get("state", "").lower()
+    state_name = state.title()
+    # Save state to session
+    SessionManager.update(session_id, "new_patient_state", state)
     text = (
-        f"Thank you {first_name}! I am going to ask you just a few more questions "
-        "so we can determine if we can move forward with your 15 minute phone consultation.\n"
-        "We have providers in a variety of states, what state do you reside in?"
+        f"Excellent! We have providers who are licensed to provide care in {state_name}.\n\n"
+        "Could you please tell me who your insurance carrier is?"
     )
     return build_rich_response(text)
 
 
 def assessment_not_eligible_state_handler(session_id, req):
-    state = req.get("queryResult", {}).get(
-        "parameters", {}).get("state", "your state")
+    logging.debug("IN assessment_not_eligible_state_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    parameters = req.get("queryResult", {}).get("parameters", {})
+    state = parameters.get("state", "")
+    state_name = state.title() if state else "your state"
     text = (
-        f"I’m sorry, we currently do not have any providers in {state}.\n"
-        "We are continually growing and are expanding to more states.\n"
-        "You are welcome to check back with us at a later date.\n"
+        f"I’m sorry, but currently we do not have any providers licensed in {state_name}. We are continually growing and are expanding to more states. "
+        "You are welcome to check back with us at a later date.\n\n"
         "I recommend that you visit any one of the following services. They may be able to help you find a provider in your state:\n"
         "• [SAMSHA](https://findtreatment.gov/)\n"
         "• [Psychology Today](https://www.psychologytoday.com/)\n"
         "• [Alma](https://secure.helloalma.com/providers-landing/)\n"
         "• [Headway](https://headway.co/)\n"
-        "• [Grow Therapy](https://growtherapy.com/)\n"
+        "• [Grow Therapy](https://growtherapy.com/)\n\n"
         "Is there anything else that I can help you with?"
     )
-    return build_rich_response(text)
-
-
-def consult_not_eligible_state_handler(session_id, req):
-    state = req.get("queryResult", {}).get(
-        "parameters", {}).get("state", "your state")
-    text = (
-        f"I’m sorry, we are unable to move forward scheduling your\n"
-        f"15 minute phone consultation as we currently do not have any providers in {state}.\n"
-        "We are continually growing and are expanding to more states.\n"
-        "You are welcome to check back with us at a later date.\n"
-        "I recommend that you visit any one of the following services. They may be able to help you find a provider in your state:\n"
-        "• [SAMSHA](https://findtreatment.gov/)\n"
-        "• [Psychology Today](https://www.psychologytoday.com/)\n"
-        "• [Alma](https://secure.helloalma.com/providers-landing/)\n"
-        "• [Headway](https://headway.co/)\n"
-        "• [Grow Therapy](https://growtherapy.com/)\n"
-        "Is there anything else that I can help you with?"
-    )
-    return build_rich_response(text)
-
-
-def assessment_collect_insurance_handler(session_id, req):
-    state = req.get("queryResult", {}).get("parameters", {}).get("state", "")
-    text = (
-        f"Excellent! We have providers who are licensed to provide care in {state}. "
-        "Who is your health insurance carrier?\n"
-        "If you see your insurance company in the buttons below you can select the button. "
-        "If you don’t see your insurance provider, that does not necessarily mean that we are not in-network for you. "
-        "Please provide us with that information and we will be able to collect that information and let you know."
-    )
-    return build_rich_response(text, INSURANCE_COMPANIES)
-
-
-def consult_collect_insurance_handler(session_id, req):
-    state = req.get("queryResult", {}).get("parameters", {}).get("state", "")
-    text = (
-        f"We have providers who are licensed to provide care in {state}. "
-        "Can you please provide me withyour health insurance carrier?\n"
-        "If you see your insurance company in the buttons below you can select the button. "
-        "If you don’t see your insurance provider, that does not necessarily mean that we are not in-network for you. "
-        "You can let us know that information and we will be able to collect it and let you know."
-    )
-    return build_rich_response(text, INSURANCE_COMPANIES)
-
-
-def assessment_not_eligible_insurance_handler(session_id, req):
-    insurance = req.get("queryResult", {}).get(
-        "parameters", {}).get("insurance", "your carrier")
-    text = (
-        f"I’m sorry, we currently do not take {insurance}.\n"
-        "We are continually expanding our network of insurance providers.\n"
-        "You are welcome to check back with us at a later date.\n"
-        f"I recommend that you visit any one of the following services. They may be able to help you find a provider that accepts {insurance}:\n"
-        "• [Psychology Today](https://www.psychologytoday.com/)\n"
-        "• [Alma](https://secure.helloalma.com/providers-landing/)\n"
-        "• [Headway](https://headway.co/)\n"
-        "• [Grow Therapy](https://growtherapy.com/)\n"
-        "Is there anything else that I can help you with?"
-    )
-    return build_rich_response(text)
-
-
-def consult_not_eligible_insurance_handler(session_id, req):
-    insurance = req.get("queryResult", {}).get(
-        "parameters", {}).get("insurance", "your carrier")
-    text = (
-        f"I’m sorry, we currently do not take {insurance} and won't be able to go forward scheduling the phone consult.\n"
-        "We are continually expanding our network of insurance providers.\n"
-        "You are welcome to check back with us at a later date.\n"
-        f"I recommend that you visit any one of the following services. They may be able to help you find a provider that accepts {insurance}:\n"
-        "• [Psychology Today](https://www.psychologytoday.com/)\n"
-        "• [Alma](https://secure.helloalma.com/providers-landing/)\n"
-        "• [Headway](https://headway.co/)\n"
-        "• [Grow Therapy](https://growtherapy.com/)\n"
-        "Is there anything else that I can help you with?"
-    )
-    return build_rich_response(text)
-
-
-def assessment_collect_phone_handler(session_id, req):
-    insurance = req.get("queryResult", {}).get(
-        "parameters", {}).get("insurance", "")
-    text = (
-        f"Good news! {insurance} is an insurance that we accept. We will still need to collect some specific insurance information from you to help verify if we are in network for you. "
-        "We will call you to get that information. Could you please provide your phone number?"
-    )
-    return build_rich_response(text)
-
-
-def consult_collect_phone_handler(session_id, req):
-    insurance = req.get("queryResult", {}).get(
-        "parameters", {}).get("insurance", "")
-    text = (
-        f"{insurance} is one that we accept. We can't guarantee coverage at this point, but we can go ahead and schedule the phone consult. "
-        "Could you please provide your phone number?"
-    )
-    return build_rich_response(text)
-
-
-def assessment_select_provider_handler(session_id, req):
-    state = req.get("queryResult", {}).get("parameters", {}).get("state", "")
-    text = (
-        "Let’s go ahead and get you scheduled. We can do this now to expedite the process while your insurance is being verified.\n"
-        "We first need to get a provider for you. You can select one of these providers who are licensed in "
-        f"{state} or simply say that you would like the soonest available provider."
-    )
-    return build_rich_response(text, PROVIDERS)
-
-
-def assessment_select_date_time_handler(session_id, req):
-    provider = req.get("queryResult", {}).get(
-        "parameters", {}).get("provider", "")
-    text = (
-        f"Here are some telehealth appointment dates and times that we have available with {provider}. "
-        "Please select the one that you would prefer."
-    )
-    buttons = [f"{slot['date']} {slot['time']}" for slot in APPOINTMENT_TIMES]
-    return build_rich_response(text, buttons)
-
-
-def assessment_call_to_schedule_else_handler(session_id, req):
-    text = (
-        "I understand that none of those appointment dates work for you. The most efficient way for us to get you on the schedule is if you call the clinic. "
-        "The clinic’s phone number is: 407-638-8903. When you call please provide your name and let the clinic assistant know that you have contacted us through messaging. "
-        "Is there anything else that I can help you with today?"
-    )
-    return build_rich_response(text)
-
-
-def assessment_appointment_confirm_email_request_handler(session_id, req):
-    first_name = req.get("queryResult", {}).get(
-        "parameters", {}).get("given-name", "")
-    provider = req.get("queryResult", {}).get(
-        "parameters", {}).get("provider", "")
-    appointment = req.get("queryResult", {}).get(
-        "parameters", {}).get("appointment", "")
-    date, time = appointment.split() if appointment else ("", "")
-    text = (
-        f"Thank you {first_name}! We have you scheduled for {date} at {time} with {provider}. "
-        "Could you please provide us with your email address? We will send you an email confirmation of this appointment. "
-        "You will also receive some intake paperwork that will need to be completed before your appointment."
-    )
-    return build_rich_response(text)
-
-
-def assessment_anything_else_handler(session_id, req):
-    text = (
-        "Thank you for providing us with your email address. You will receive a message from us soon. "
-        "Is there anything else that I can help you with?"
-    )
-    return build_rich_response(text)
-
-
-def consult_anything_else_handler(session_id, req):
-    text = (
-        "Thank you for providing us with your phone number. Someone will reach out to you soon to schedule the phone consultation. "
-        "Is there anything else that I can help you with?"
-    )
-    return build_rich_response(text)
-
-
-def thankyou_goodbye_exit_handler(session_id, req):
-    text = (
-        "Thank you for reaching out to Solrei Behavioral Health! "
-        "I hope that you have a great rest of your day! Goodbye."
-    )
-    return build_rich_response(text)
-
-
-def fallback_handler(session_id, req):
-    text = "I'm sorry, I didn't quite understand. How can I help you today?"
-    suggestions = ["Schedule appointment", "Prescription question",
-                   "Insurance/Billing", "Provider question"]
+    suggestions = ["No, thank you", "Yes, I have another question"]
     return build_rich_response(text, suggestions)
 
 
+def fallback_handler(session_id, req):
+    text = "Sorry, I didn't catch that. How can I help?"
+    suggestions = ["Schedule", "Provider", "Hours"]
+    return build_rich_response(text, suggestions)
+
+
+# --- Intent Routing ---
+
 INTENT_HANDLERS = {
-    "welcome": welcome_handler,
-    "appointment_select_new_existing": appointment_select_new_existing_handler,
+    "welcome_": welcome_handler,
+    "appointment_select_new_existing": appointment_entry_handler,
+    # <<<--- Add this!
     "new_patient_select_consult_assessment": new_patient_select_consult_assessment_handler,
-    "assessment_collect_name": assessment_collect_name_handler,
-    "consult_collect_name": consult_collect_name_handler,
+    "select_visit_type": select_visit_type_handler,
+    "07_existing_patient_entry_route": existing_patient_entry_route_handler,
+    "Default Fallback Intent": fallback_handler,
+
+
     "assessment_collect_state": assessment_collect_state_handler,
-    "consult_collect_state": consult_collect_state_handler,
     "assessment_not_eligible_state": assessment_not_eligible_state_handler,
-    "consult_not_eligible_state": consult_not_eligible_state_handler,
     "assessment_collect_insurance": assessment_collect_insurance_handler,
-    "consult_collect_insurance": consult_collect_insurance_handler,
-    "assessment_not_eligible_insurance": assessment_not_eligible_insurance_handler,
-    "consult_not_eligible_insurance": consult_not_eligible_insurance_handler,
-    "assessment_collect_phone": assessment_collect_phone_handler,
-    "consult_collect_phone": consult_collect_phone_handler,
-    "assessment_select_provider": assessment_select_provider_handler,
-    "assessment_select_date_time": assessment_select_date_time_handler,
-    "assessment_call_to_schedule_else": assessment_call_to_schedule_else_handler,
-    "assessment_appointment_confirm_email_request": assessment_appointment_confirm_email_request_handler,
-    "assessment_anything_else": assessment_anything_else_handler,
-    "consult_anything_else": consult_anything_else_handler,
-    "thankyou_goodbye_exit": thankyou_goodbye_exit_handler,
-    "fallback": fallback_handler,
-
-
-    # "existing_patient_collect_provider": existing_patient_collect_provider_handler,
-    # "existing_patient_collect_date_time": existing_patient_collect_date_time_handler,
-    # "existing_patient_confirm_appointment": existing_patient_confirm_appointment_handler,
-    # "existing_patient_appointment_confirm_else": existing_patient_appointment_confirm_else_handler,
-
-    # "prescription_entry": prescription_entry_handler,
-    # "refill_request": refill_request_handler,
-    # "refill_appointment": refill_appointment_handler,
-    # "refill_urgent": refill_urgent_handler,
-    # "refill_message_else": refill_message_else_handler,
-    # "prescription_question": prescription_question_handler,
-    # "out_of_stock": out_of_stock_handler,
-    # "out_of_stock_advice_else": out_of_stock_advice_else_handler,
-    # "no_prescription": no_prescription_handler,
-    # "no_prescription_advice_else": no_prescription_advice_else_handler,
-
-    # "provider_request_entry": provider_request_entry_route_handler,
-    # "provider_select": provider_select_handler,
-    # "jodene_select": jodene_select_handler,
-    # "jodene_questionn": jodene_question_handler,
-    # "jodene_message_else": jodene_message_else_handler,
-    # "katie_select": katie_select_handler,
-    # "katie_question": katie_question_handler,
-    # "katie_message_else": katie_message_else_handler,
-    # "megan_select": megan_select_handler,
-    # "megan_question": megan_question_handler,
-    # "megan_message_else": megan_message_else_handler,
-
-    # "insurance_entry": insurance_entry_handler,
-    # "insurance_claim_status": insurance_claim_status_handler,
-    # "insurance_claim_name": insurance_claim_name_handler,
-    # "insurance_claim_dos": insurance_claim_dos_handler,
-    # "insurance_claim_phone": insurance_claim_phone_handler,
-    # "insurance_claim_will_return_else": insurance_claim_will_return_else_handler,
-    # "insurance_coverage_inquiry": insurance_coverage_inquiry_handler,
-    # "insurance_coverage_name": insurance_coverage_name_handler,
-    # "insurance_policy_collect": insurance_policy_collect_handler,
-    # "insurance_collect_phone_else": insurance_collect_phone_else_handler,
-
-    # "billing_entry": billing_entry_handler,
-    # "billing_question": billing_question_handler,
-    # "billing_question_message_else": billing_question_message_else_handler,
-    # "billing_rates": billing_rates_handler,
-    # "billing_rates_info_else": billing_rates_info_else_handler,
-
-    # "clinic_hours": clinic_hours_handler,
-    # "clinic_hours_info_else": clinic_hours_info_else_handler,
-
-    # "small_talk.goodbye": small_talk_goodbye_handler,
-    # "small_talk.hours": small_talk_hours_handler,
-    # "small_talk.thanks": small_talk_thanks_handler,
-
-    # "view_licensed_states": view_licensed_states_handler,
-
-    # "no_other_questions": no_other_questions_handler,
-
-    # "request_human": request_human_handler,
+    # "assessment_not_eligible_insurance": assessment_not_eligible_insurance_handler,
+    # "03d_new_patient_reason_for_visit": new_patient_reason_for_visit_handler,
+    # "04_new_patient__visit_type_selection": new_patient_visit_type_selection_handler,
+    # "05_consult_entry_route": consult_entry_route_handler,
+    # "05a_consult_phone_provider_select": consult_phone_provider_select_handler,
+    # "05b_consult_phone_collection": consult_phone_collection_handler,
+    # "06_initial_assessment_entry_route": initial_assessment_entry_route_handler,
+    # "06a_initial_assessment_provider_select": initial_assessment_provider_select_handler,
+    # "06b_initial_assessment_schedule": initial_assessment_schedule_handler,
+    # "06c_initial_assessment_phone_collect": initial_assessment_phone_collect_handler,
+    # "06d_initial_assessment__confirm_else": initial_assessment__confirm_else_handler,
+    # "07a_patient_reason_for_visit": patient_reason_for_visit_handler,
+    # "07b_patient_name_collection": patient_name_handler,
+    # "07c_patient_provider": patient_provider_handler,
+    # "07d_patient_schedule": patient_schedule_handler,
+    # "07e_patient_appointment_confirm_else": patient_appointment_confirm_else_handler,
+    # "08_prescription_entry_route": prescription_entry_route_handler,
+    # "09_refill_request": refill_request_handler,
+    # "09a_refill_appointment": refill_appointment_handler,
+    # "09b_refill_urgent": refill_urgent_handler,
+    # "09c_refill_message_else": refill_message_else_handler,
+    # "10_prescription_question": prescription_question_handler,
+    # "11_out_of_stock_intent": out_of_stock_handler,
+    # "11a_out_of_stock_advice_else": out_of_stock_advice_else_handler,
+    # "12_no_prescription": no_prescription_handler,
+    # "12a_no_prescription_advice_else": no_prescription_advice_else_handler,
+    # "13_provider_request_entry_route": provider_request_entry_route_handler,
+    # "13a_provider_select": provider_select_handler,
+    # "14_jodene_select": jodene_select_handler,
+    # "14a_jodene_question": jodene_question_handler,
+    # "14b_jodene_message_else": jodene_message_else_handler,
+    # "15_katie_select": katie_select_handler,
+    # "15a_katie_question": katie_question_handler,
+    # "15b_katie_message_else": katie_message_else_handler,
+    # "16_megan_select": megan_select_handler,
+    # "16a_megan_question": megan_question_handler,
+    # "16b_megan_message_else": megan_message_else_handler,
+    # "17_insurance_entry_route": insurance_entry_route_handler,
+    # "18_insurance_claim_status": insurance_claim_status_handler,
+    # "18a_insurance_claim_name": insurance_claim_name_handler,
+    # "18b_insurance_claim_dos": insurance_claim_dos_handler,
+    # "18c_insurance_claim_phone": insurance_claim_phone_handler,
+    # "18d_insurance_claim_will_return_else": insurance_claim_will_return_else_handler,
+    # "19_insurance_coverage_inquiry": insurance_coverage_inquiry_handler,
+    # "19a_insurance_coverage_name": insurance_coverage_name_handler,
+    # "19b_insurance_policy_collect": insurance_policy_collect_handler,
+    # "19c_insurance_collect_phone_else": insurance_collect_phone_else_handler,
+    # "20_billing_entry_route": billing_entry_route_handler,
+    # "21_billing_question": billing_question_handler,
+    # "21a_billing_question_message_else": billing_question_message_else_handler,
+    # "22_billing_rates": billing_rates_handler,
+    # "22a_billing_rates_info_else": billing_rates_info_else_handler,
+    # "23_clinic_hours": clinic_hours_handler,
+    # "23a_clinic_hours_info_else": clinic_hours_info_else_handler,
+    # "90_small_talk.goodbye": small_talk_goodbye_handler,
+    # "90_small_talk.hours": small_talk_hours_handler,
+    # "90_small_talk.thanks": small_talk_thanks_handler,
+    # "95_view_licensed_states": view_licensed_states_handler,
+    # "99_no_other_questions": no_other_questions_handler,
+    # "z100_request_human": request_human_handler,
 
 
     # ... add other handlers as needed ...
