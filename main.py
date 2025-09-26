@@ -270,7 +270,7 @@ def fallback_handler(session_id, req):
 # --- Intent Routing ---
 
 INTENT_HANDLERS = {
-    "welcome_": welcome_handler,
+    "welcome": welcome_handler,
     "appointment_select_new_existing": appointment_entry_handler,
     # <<<--- Add this!
     "new_patient_select_consult_assessment": new_patient_select_consult_assessment_handler,
