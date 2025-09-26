@@ -89,11 +89,11 @@ def welcome_handler(session_id, req):
     return build_rich_response(text, suggestions)
 
 
-def appointment_entry_handler(session_id, req):
-    logging.debug("IN appointment_entry_handler")
+def appointment_select_new_existing_handler(session_id, req):
+    logging.debug("IN appointment_select_new_existing_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
-    SessionManager.update(session_id, "appointment_entry", True)
+    SessionManager.update(session_id, "appointment_select_new_existing", True)
     text = (
         "Yes, I can certainly help you with that! Are you new to our clinic or are you an existing patient, continuing care with one of our providers?"
     )
@@ -271,7 +271,7 @@ def fallback_handler(session_id, req):
 
 INTENT_HANDLERS = {
     "welcome": welcome_handler,
-    "appointment_select_new_existing": appointment_entry_handler,
+    "appointment_select_new_existing": appointment_select_new_existing_handler,
     # <<<--- Add this!
     "new_patient_select_consult_assessment": new_patient_select_consult_assessment_handler,
     "select_visit_type": select_visit_type_handler,
