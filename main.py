@@ -20,7 +20,7 @@ INSURANCE_ACCEPTED = ["aetna", "cigna", "united", "uhc", "unitedhealthcare", "bl
                       "blue cross", "humana", "medicare", "medicaid", "tricare", "optum",
                       "oscar", "oxford", "self-pay", "other"]
 
-LICENSED_STATES = {
+STATES = {
     "alaska": "AK", "arizona": "AZ", "colorado": "CO", "florida": "FL",
     "hawaii": "HI", "idaho": "ID", "iowa": "IA", "kentucky": "KY",
     "maine": "ME", "maryland": "MD", "minnesota": "MN", "montana": "MT",
@@ -35,6 +35,35 @@ LICENSED_STATES = {
     "kansas": "KS", "utah": "UT", "connecticut": "CT", "oklahoma": "OK",
     "mississippi": "MS", "west virginia": "WV", "rhode island": "RI", "delaware": "DE"
 }
+
+
+LICENSED_STATES = {
+    "alaska": "AK", "arizona": "AZ", "colorado": "CO", "florida": "FL",
+    "hawaii": "HI", "idaho": "ID", "iowa": "IA", "kansas": "KS", "kentucky": "KY",
+    "maine": "ME", "maryland": "MD", "minnesota": "MN", "montana": "MT",
+    "nebraska": "NE", "nevada": "NV", "new hampshire": "NH", "new mexico": "NM",
+    "north dakota": "ND", "oregon": "OR", "south dakota": "SD", "vermont": "VT",
+    "washington": "WA", "wyoming": "WY", "district of columbia": "DC", "dc": "DC",
+
+}
+
+LICENSED_STATES_JODENE = {
+    "alaska": "AK", "arizona": "AZ", "colorado": "CO", "florida": "FL",
+    "hawaii": "HI", "idaho": "ID", "iowa": "IA", "kansas": "KS", "maryland": "MD",
+    "minnesota": "MN", "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH", "new mexico": "NM",
+    "north dakota": "ND", "oregon": "OR", "south dakota": "SD", "washington": "WA",
+    "wyoming": "WY", "district of columbia": "DC", "dc": "DC",
+}
+
+LICENSED_STATES_KATIE = {
+    "alaska": "AK", "florida": "FL", "oregon": "OR", "washington": "WA",
+}
+
+LICENSED_STATES_MEGAN = {
+    "florida": "FL", "kansas": "KS", "kentucky": "KY", "maine": "ME", "new hampshire": "NH",
+    "vermont": "VT"
+}
+
 CLINIC_PHONE = "407-638-8903"
 
 # --- Session Memory (Persistent) ---
@@ -95,7 +124,9 @@ def appointment_select_new_existing_handler(session_id, req):
         "queryResult", {}).get("parameters", {}))
     SessionManager.update(session_id, "appointment_select_new_existing", True)
     text = (
-        "Yes, I can certainly help you with that! Are you new to our clinic or are you an existing patient, continuing care with one of our providers?"
+        "Excellent! I can help you with scheduling an appointment.\n"
+        "Are you a current patient of the clinic or are you a new patient looking "
+        "to set up an appointment with a new provider?\n"
     )
     suggestions = [
         "New Patient",
@@ -104,8 +135,8 @@ def appointment_select_new_existing_handler(session_id, req):
     return build_rich_response(text, suggestions)
 
 
-def patient_type_selection_handler(session_id, req):
-    logging.debug("IN patient_type_selection_handler")
+def select_patient_type_handler(session_id, req):
+    logging.debug("IN select_patient_type_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
     # Get patient_type parameter from Dialogflow entities
@@ -114,9 +145,9 @@ def patient_type_selection_handler(session_id, req):
     if patient_type in ["new", "new patient"]:
         # Route to new patient entry
         return new_patient_select_consult_assessment_handler(session_id, req)
-    elif patient_type in ["existing", "returning", "existing patient"]:
+    elif patient_type in ["existing", "returning", "current", "existing patient"]:
         # Route to existing patient entry
-        return existing_patient_entry_route_handler(session_id, req)
+        return existing_patient_collect_name_handler(session_id, req)
     else:
         # If not recognized, fallback
         text = "Are you a new patient or an existing patient?"
@@ -125,27 +156,22 @@ def patient_type_selection_handler(session_id, req):
 
 
 def new_patient_select_consult_assessment_handler(session_id, req):
-    """
-    Handler for the 'new_patient_select_consult_assessment' intent.
-    This function prompts the user to select between a phone consultation or an initial assessment.
-    """
     logging.debug("IN new_patient_select_consult_assessment_handler")
-    logging.debug("parameters: %s", req.get(
-        "queryResult", {}).get("parameters", {}))
     text = (
-        "We offer two options for new patients:\n\n"
-        "1️⃣  **Free 15-minute phone consultation**\n"
-        "    - Not a clinical visit\n"
-        "    - Helps you and the provider determine if you are a good fit for each other\n\n"
-        "2️⃣  **55-minute initial assessment**\n"
-        "    - This is a clinical visit\n"
-        "    - May allow you to schedule an appointment as soon as one is available\n\n"
-        "What would be your preference?"
+        "Welcome, we are glad that you have reached out to us.\n"
+        "I can get the process started. We offer two options for new patients:\n"
+        "Free phone consultation\n"
+        "Initial assessment\n\n"
+        "The free phone consultation is not a medical or clinical visit, "
+        "it is a brief 15 minute phone call intended to help you and the provider "
+        "determine if you are a good fit for each other.\n\n"
+        "The initial assessment is a clinical visit where the provider will conduct a full assessment, "
+        "and together with you, will create a treatment plan for going forward. "
+        "Sometimes prescriptions are written at this appointment. "
+        "It is a way to get you started as quickly as possible.\n\n"
+        "Which appointment type do you prefer?"
     )
-    suggestions = [
-        "Phone Consultation",
-        "Initial Assessment"
-    ]
+    suggestions = ["Initial Assessment", "Phone Consultation"]
     return build_rich_response(text, suggestions)
 
 
@@ -164,7 +190,7 @@ def select_visit_type_handler(session_id, req):
     if visit_type_normalized in ["initial assessment"]:
         intro = (
             "I think setting up the initial assessment is a great idea. We’ll do our best to get you moving quickly.\n\n"
-            "Before we schedule your appointment, I’ll need a few things from you. These will help us determine if any of our providers would be able to see you. "
+            "Before we schedule your appointment, I’ll need a few things from you. These will help us determine if any of our providers would be able to see you.\n"
             "If for some reason we don’t have a provider who would be able to see you, we can save you some time by getting this info now.\n\n"
         )
     elif visit_type_normalized in ["phone consultation"]:
@@ -191,7 +217,7 @@ def select_visit_type_handler(session_id, req):
     return build_rich_response(text)
 
 
-def existing_patient_entry_route_handler(session_id, req):
+def existing_patient_collect_name_handler(session_id, req):
     logging.debug("IN existing_patient_entry_route_handler")
     logging.debug("parameters: %s", req.get(
         "queryResult", {}).get("parameters", {}))
@@ -201,6 +227,26 @@ def existing_patient_entry_route_handler(session_id, req):
     )
     # No suggestions/buttons at this point, just collecting name
     return build_rich_response(text)
+
+
+def consult_collect_state_handler(session_id, req):
+    logging.debug("IN consult_collect_state_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    parameters = req.get("queryResult", {}).get("parameters", {})
+    full_name = parameters.get("person", "") or parameters.get("name", "")
+    state = parameters.get("state", "").lower()
+    first_name = full_name.split()[0].capitalize() if full_name else "there"
+    SessionManager.update(session_id, "new_patient_full_name", full_name)
+    SessionManager.update(session_id, "new_patient_state", state)
+
+    # Check if state is eligible
+    if state in LICENSED_STATES or state.title() in LICENSED_STATES.values():
+        # Route to insurance collection
+        return assessment_collect_insurance_handler(session_id, req)
+    else:
+        # Route to not eligible state handler
+        return assessment_not_eligible_state_handler(session_id, req)
 
 
 def assessment_collect_state_handler(session_id, req):
@@ -221,6 +267,36 @@ def assessment_collect_state_handler(session_id, req):
     else:
         # Route to not eligible state handler
         return assessment_not_eligible_state_handler(session_id, req)
+
+
+def consult_collect_phone_handler(session_id, req):
+    logging.debug("IN consult_collect_phone_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    parameters = req.get("queryResult", {}).get("parameters", {})
+    full_name = parameters.get("person", "") or parameters.get("name", "")
+    first_name = full_name.split()[0].capitalize() if full_name else "there"
+    SessionManager.update(session_id, "consult_full_name", full_name)
+    text = (
+        f"Thanks {first_name}!\n\n"
+        "Could you please provide your phone number so the provider can reach you?"
+    )
+    return build_rich_response(text)
+
+
+def assessment_collect_phone_handler(session_id, req):
+    logging.debug("IN assessment_collect_phone_handler")
+    logging.debug("parameters: %s", req.get(
+        "queryResult", {}).get("parameters", {}))
+    parameters = req.get("queryResult", {}).get("parameters", {})
+    full_name = parameters.get("person", "") or parameters.get("name", "")
+    first_name = full_name.split()[0].capitalize() if full_name else "there"
+    SessionManager.update(session_id, "consult_full_name", full_name)
+    text = (
+        f"Thanks {first_name}!\n\n"
+        "Could you please provide me with your phone number?"
+    )
+    return build_rich_response(text)
 
 
 def assessment_collect_insurance_handler(session_id, req):
@@ -268,20 +344,28 @@ def fallback_handler(session_id, req):
 
 
 # --- Intent Routing ---
-
 INTENT_HANDLERS = {
     "welcome": welcome_handler,
     "appointment_select_new_existing": appointment_select_new_existing_handler,
     # <<<--- Add this!
+
     "new_patient_select_consult_assessment": new_patient_select_consult_assessment_handler,
-    "select_visit_type": select_visit_type_handler,
-    "07_existing_patient_entry_route": existing_patient_entry_route_handler,
     "Default Fallback Intent": fallback_handler,
-
-
+    "select_patient_type": select_patient_type_handler,
     "assessment_collect_state": assessment_collect_state_handler,
     "assessment_not_eligible_state": assessment_not_eligible_state_handler,
     "assessment_collect_insurance": assessment_collect_insurance_handler,
+    "existing_patient_collect_name": existing_patient_collect_name_handler,
+    "consult_collect_phone": consult_collect_phone_handler,
+    "assessment_collect_phone": assessment_collect_phone_handler,
+    "select_visit_type": select_visit_type_handler,
+    "consult_collect_state": consult_collect_state_handler,
+
+
+
+
+
+
     # "assessment_not_eligible_insurance": assessment_not_eligible_insurance_handler,
     # "03d_new_patient_reason_for_visit": new_patient_reason_for_visit_handler,
     # "04_new_patient__visit_type_selection": new_patient_visit_type_selection_handler,
@@ -294,7 +378,7 @@ INTENT_HANDLERS = {
     # "06c_initial_assessment_phone_collect": initial_assessment_phone_collect_handler,
     # "06d_initial_assessment__confirm_else": initial_assessment__confirm_else_handler,
     # "07a_patient_reason_for_visit": patient_reason_for_visit_handler,
-    # "07b_patient_name_collection": patient_name_handler,
+
     # "07c_patient_provider": patient_provider_handler,
     # "07d_patient_schedule": patient_schedule_handler,
     # "07e_patient_appointment_confirm_else": patient_appointment_confirm_else_handler,
