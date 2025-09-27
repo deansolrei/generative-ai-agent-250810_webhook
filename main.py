@@ -187,13 +187,13 @@ def select_visit_type_handler(session_id, req):
 
     SessionManager.update(session_id, "visit_type", visit_type)
 
-    if visit_type_normalized in ["initial assessment"]:
+    if visit_type_normalized in ["initial assessment", "assessment", "initial", "intake", "first appointment", "diagnostic assessment", "preliminary evaluation", "initial screening"]:
         intro = (
             "I think setting up the initial assessment is a great idea. We’ll do our best to get you moving quickly.\n\n"
             "Before we schedule your appointment, I’ll need a few things from you. These will help us determine if any of our providers would be able to see you.\n"
             "If for some reason we don’t have a provider who would be able to see you, we can save you some time by getting this info now.\n\n"
         )
-    elif visit_type_normalized in ["phone consultation"]:
+    elif visit_type_normalized in ["phone consultation", "consultation", "consult", "phone consult", "phone call", "consult call", "consult phone", "phone", "free consultation", "free consult"]:
         intro = (
             "A phone consultation is a nice approach, especially since there is no cost to you.\n"
             "If you are certain that you don’t want to go directly to scheduling an appointment,\n"
