@@ -212,7 +212,7 @@ def get_random_encouragement() -> str:
 # Replace with your actual Sheet IDSHEET_ID = "14v55dbwfn1EmHUcJV47dbXZrLVVOPj9Fj8J-_Jmk75A"
 # Replace with your actual Sheet ID
 SHEET_ID = "14v55dbwfn1EmHUcJV47dbXZrLVVOPj9Fj8J-_Jmk75A"
-WORKSHEET_NAME = "prescription_faq"          # Replace if needed
+# WORKSHEET_NAME = "prescription_faq"          # Replace if needed
 
 
 def clean_text(text):
@@ -223,8 +223,30 @@ def is_similar(a, b, threshold=0.7):
     return SequenceMatcher(None, a, b).ratio() > threshold
 
 
-def load_prescription_faq_from_gsheet(sheet_id="14v55dbwfn1EmHUcJV47dbXZrLVVOPj9Fj8J-_Jmk75A", worksheet_name="prescription_faq"):
-    print("Starting to load FAQ from Google Sheet...")
+# def load_prescription_faq_from_gsheet(sheet_id="14v55dbwfn1EmHUcJV47dbXZrLVVOPj9Fj8J-_Jmk75A", worksheet_name="prescription_faq"):
+#     print("Starting to load FAQ from Google Sheet...")
+#     try:
+#         scopes = [
+#             'https://www.googleapis.com/auth/spreadsheets',
+#             'https://www.googleapis.com/auth/drive'
+#         ]
+#         creds = Credentials.from_service_account_file(
+#             'service_account.json', scopes=scopes)
+#         client = gspread.authorize(creds)
+#         print("Authorized client OK")
+#         sheet = client.open_by_key(sheet_id)
+#         print(f"Opened sheet: {sheet.title}")
+#         worksheet = sheet.worksheet(worksheet_name)
+#         print(f"Opened worksheet: {worksheet.title}")
+#         rows = worksheet.get_all_records()
+#         print("Loaded rows:", rows)
+#         return rows
+#     except Exception as e:
+#         print("Error loading from Google Sheet:", e)
+#         return []
+
+
+def load_faq_from_gsheet(sheet_id, worksheet_name):
     try:
         scopes = [
             'https://www.googleapis.com/auth/spreadsheets',
@@ -233,31 +255,50 @@ def load_prescription_faq_from_gsheet(sheet_id="14v55dbwfn1EmHUcJV47dbXZrLVVOPj9
         creds = Credentials.from_service_account_file(
             'service_account.json', scopes=scopes)
         client = gspread.authorize(creds)
-        print("Authorized client OK")
         sheet = client.open_by_key(sheet_id)
-        print(f"Opened sheet: {sheet.title}")
         worksheet = sheet.worksheet(worksheet_name)
-        print(f"Opened worksheet: {worksheet.title}")
         rows = worksheet.get_all_records()
-        print("Loaded rows:", rows)
         return rows
     except Exception as e:
-        print("Error loading from Google Sheet:", e)
+        print(f"Error loading from worksheet {worksheet_name}:", e)
         return []
 
+# In each handler:
 
-# def match_faq_answer(user_input, faqs, clinic_phone_number=CLINIC_INFO.get('phone', "407-638-8903")):
-#     user_input_clean = clean_text(user_input)
-#     for faq in faqs:
-#         keywords = [clean_text(k) for k in faq['question_keywords'].split(',')]
-#         for keyword in keywords:
-#             if keyword in user_input_clean:
-#                 answer = faq['answer']
-#                 if clinic_phone_number:
-#                     answer = answer.replace(
-#                         "{clinic_phone_number}", clinic_phone_number)
-#                 return answer
-#     return None
+
+def appointment_entry_handler(session_id: str, req: Dict) -> Dict:
+    faqs = load_faq_from_gsheet(SHEET_ID, "appoinment_faq")
+    # ... use faqs in your logic …
+
+
+def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
+    faqs = load_faq_from_gsheet(SHEET_ID, "prescription_faq")
+    # ... use faqs in your logic …
+
+
+def insurance_entry_handler(session_id: str, req: Dict) -> Dict:
+    faqs = load_faq_from_gsheet(SHEET_ID, "insurance_faq")
+    # ... use faqs in your logic …
+
+
+def billing_entry_handler(session_id: str, req: Dict) -> Dict:
+    faqs = load_faq_from_gsheet(SHEET_ID, "billing_faq")
+    # ... use faqs in your logic …
+
+
+def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
+    faqs = load_faq_from_gsheet(SHEET_ID, "prescription_faq")
+    # ... use faqs in your logic …
+
+
+def practitioner_message_entry_handler(session_id: str, req: Dict) -> Dict:
+    faqs = load_faq_from_gsheet(SHEET_ID, "practitioner_faq")
+    # ... use faqs in your logic ...
+
+
+def general_information_handler(session_id: str, req: Dict) -> Dict:
+    faqs = load_faq_from_gsheet(SHEET_ID, "info_faq")
+    # ... use faqs in your logic ...
 
 
 def match_faq_answer(user_input, faqs, clinic_phone_number):
@@ -465,12 +506,12 @@ def welcome_handler(session_id: str, req: Dict) -> Dict:
     )
 
     suggestions = [
-        "📅 Book Appointment",
-        "💊 Prescription",
+        "📅 Schedule Appointment",
+        "💊 Prescriptions",
         "🏥 Insurance",
         "💰 Billing",
-        "📞 Contact Provider",
-        "ℹ️ General Info"
+        "📞 Contact Practitioner",
+        "ℹ️ General Information"
     ]
 
     return build_response(text, suggestions)
@@ -1403,8 +1444,18 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
     faqs = load_prescription_faq_from_gsheet()
     answer = match_faq_answer(user_input, faqs, clinic_phone_number)
 
+    # 1. Initial step: user just selected "prescription" from the button
+    if user_input in ["prescription", "💊 prescription", "prescriptions", "💊 prescriptions"]:
+        return build_response(
+            "I'm here to help with your prescription!\n"
+            "Would you like to request a refill, or do you have a prescription-related question?\n"
+            "I can help you with common questions about prescriptions.",
+            # suggestions=["Refill Request", "Prescription Question"],
+            output_contexts=[create_context(get_session_path(
+                req), "awaiting_prescription_action", 2)]
+        )
 
-# Always check FAQ for prescription contexts
+    # 2. Always check FAQ for prescription contexts
     prescription_contexts = [
         "prescription_question",
         "prescription_followup",
@@ -1413,56 +1464,53 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
     if any(ctx in context_names for ctx in prescription_contexts):
         answer = match_faq_answer(user_input, faqs, clinic_phone_number)
         if answer:
-            # Set context for additional follow-ups
             return build_response(
                 answer,
-                suggestions=["No", "Yes"],
+                # suggestions=["No", "Yes"],
                 output_contexts=[create_context(
-                    get_session_path(req), "prescription_followup", 4)]
+                    get_session_path(req), "prescription_followup", 2)]
             )
-        # If no FAQ match, continue to your custom prescription logic
-        # e.g., handle "change prescription", "side effect", etc.
+        # If no FAQ match, continue to custom prescription logic
 
-    # ... Your custom prescription handling code here ...
-
-    # Initial step: user just selected "prescription"
-    if not context_names or "welcome" in context_names or user_input in ["prescription", "💊 prescription"]:
+    # 3. Custom prescription logic (if needed)
+    # For example:
+    if "change my prescription" in user_input or "switch" in user_input or "different" in user_input:
+        text = (
+            "Requesting a prescription change is something you will need to discuss with your practitioner and will require an appointment. Would you like to schedule an appointment?"
+        )
         return build_response(
-            "I'm here to help with your prescription!\n"
-            "Would you like to request a refill, or if you have a prescription-related question\n"
-            "I can help you with common questions about prescriptions.",
+            text,
+            # suggestions=["Yes", "No"],
             output_contexts=[create_context(get_session_path(
-                req), "awaiting_prescription_action", 5)]
+                req), "change_prescription_decision", 2)]
         )
 
-    # ... spreadsheet-powered FAQ and rest of flow follows ...
+    # # 4. If no context is present, try FAQ matching first
+    # if not context_names:
+    #     faqs = load_prescription_faq_from_gsheet()
+    #     clinic_phone_number = CLINIC_INFO.get('phone', "407-638-8903")
+    #     answer = match_faq_answer(user_input, faqs, clinic_phone_number)
+    #     if answer:
+    #         return build_response(
+    #             answer,
+    #             suggestions=["No", "Yes"],
+    #             output_contexts=[create_context(
+    #                 get_session_path(req), "prescription_followup", 5)]
+    #         )
+    #     # If no match, start prescription flow
+    #     return build_response(
+    #         "Can you tell me more about your prescription question?",
+    #         suggestions=["Refill Request", "Prescription Question"],
+    #         output_contexts=[create_context(get_session_path(
+    #             req), "awaiting_prescription_action", 2)]
+    #     )
 
-    # 1. If no context is present, try FAQ matching first
-    if not context_names:
-        faqs = load_prescription_faq_from_gsheet()
-        clinic_phone_number = CLINIC_INFO.get('phone', "407-638-8903")
-        answer = match_faq_answer(user_input, faqs, clinic_phone_number)
-        if answer:
-            return build_response(
-                answer,
-                suggestions=["No", "Yes"],
-                output_contexts=[create_context(
-                    get_session_path(req), "prescription_followup", 5)]
-            )
-        # If no match, start prescription flow
-        return build_response(
-            "Can you tell me more about your prescription question?",
-            suggestions=["Refill Request", "Prescription Question"],
-            output_contexts=[create_context(get_session_path(
-                req), "awaiting_prescription_action", 5)]
-        )
-
-    # 2. Awaiting prescription action or entry
+    # 4. Awaiting prescription action or entry
     if "awaiting_prescription_action" in context_names or "prescription_entry" in context_names:
         if "refill" in user_input:
             return build_response(
                 "Prescription refills require an appointment with your practitioner. Would you like to schedule an appointment?",
-                suggestions=["Yes", "No", "I need my medicine right away"],
+                # suggestions=["Yes", "No", "I need my medicine right away"],
                 output_contexts=[create_context(
                     get_session_path(req), "prescription_refill_decision")]
             )
@@ -1474,9 +1522,9 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
         if answer:
             return build_response(
                 answer,
-                suggestions=["No", "Yes"],
+                # suggestions=["No", "Yes"],
                 output_contexts=[create_context(
-                    get_session_path(req), "prescription_followup", 5)]
+                    get_session_path(req), "prescription_followup", 2)]
             )
 
         # If not a FAQ, prompt for prescription question
@@ -1484,15 +1532,15 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
             return build_response(
                 "What is your question about your prescription?",
                 output_contexts=[create_context(
-                    get_session_path(req), "prescription_question", 5)]
+                    get_session_path(req), "prescription_question", 2)]
             )
         return build_response(
             "Are you wanting to request a refill, or do you have a question about your prescription?",
             output_contexts=[create_context(get_session_path(
-                req), "awaiting_prescription_action", 5)]
+                req), "awaiting_prescription_action", 2)]
         )
 
-    # 3. Prescription Question Context
+    # 5. Prescription Question Context
     if "prescription_question" in context_names:
         faqs = load_prescription_faq_from_gsheet()
         clinic_phone_number = CLINIC_INFO.get('phone', "407-638-8903")
@@ -1500,9 +1548,9 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
         if answer:
             return build_response(
                 answer,
-                suggestions=["No", "Yes"],
+                # suggestions=["No", "Yes"],
                 output_contexts=[create_context(
-                    get_session_path(req), "prescription_followup", 5)]
+                    get_session_path(req), "prescription_followup", 2)]
             )
         # Custom logic if FAQ doesn't match
         if "when" in user_input and "ready" in user_input:
@@ -1528,9 +1576,9 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
             )
             return build_response(
                 text,
-                suggestions=["Yes", "No"],
+                # suggestions=["Yes", "No"],
                 output_contexts=[create_context(get_session_path(
-                    req), "change_prescription_decision", 5)]
+                    req), "change_prescription_decision", 2)]
             )
         elif "side effect" in user_input or "side effects" in user_input or "reaction" in user_input or "adverse" in user_input:
             text = (
@@ -1543,7 +1591,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
                 text,
                 suggestions=practitioner_names,
                 output_contexts=[create_context(get_session_path(
-                    req), "collect_side_effect_practitioner", 5)]
+                    req), "collect_side_effect_practitioner", 2)]
             )
         elif "how much" in user_input or "cost" in user_input or "price" in user_input:
             text = (
@@ -1552,9 +1600,9 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
             )
             return build_response(
                 text,
-                suggestions=["Yes", "No"],
+                # suggestions=["Yes", "No"],
                 output_contexts=[create_context(get_session_path(
-                    req), "prescription_billing_decision", 5)]
+                    req), "prescription_billing_decision", 2)]
             )
         else:
             text = (
@@ -1562,20 +1610,20 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
             )
         return build_response(
             text,
-            suggestions=["No", "Yes"],
+            # suggestions=["No", "Yes"],
             output_contexts=[create_context(
                 get_session_path(req), "prescription_followup", 5)]
         )
 
-    # 4. Refill decision flow
+    # 6. Refill decision flow
     if "prescription_refill_decision" in context_names:
         if "yes" in user_input:
             return existing_patient_handler(session_id, req)
         elif "no" in user_input:
             return build_response(
                 "Okay, let us know if you need anything else. Have a great day!",
-                suggestions=["I'm all set", "Prescription",
-                             "Insurance", "Billing"],
+                # suggestions=["I'm all set", "Prescription",
+                #              "Insurance", "Billing"],
                 output_contexts=[]
             )
         elif "need" in user_input or "right away" in user_input or "urgent" in user_input:
@@ -1585,17 +1633,17 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
                 "We will check with your practitioner. Who is your practitioner?",
                 suggestions=practitioner_names,
                 output_contexts=[create_context(
-                    get_session_path(req), "collect_urgent_practitioner", 5)]
+                    get_session_path(req), "collect_urgent_practitioner", 2)]
             )
         else:
             return build_response(
                 "Do you want to schedule an appointment for your prescription refill?",
-                suggestions=["Yes", "No", "I need my medicine right away"],
+                # suggestions=["Yes", "No", "I need my medicine right away"],
                 output_contexts=[create_context(get_session_path(
                     req), "prescription_refill_decision", 5)]
             )
 
-    # 5. Collect practitioner for urgent refill
+    # 7. Collect practitioner for urgent refill
     if "collect_urgent_practitioner" in context_names:
         practitioner_input = user_input.title()
         SessionManager.set(
@@ -1603,29 +1651,29 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
         return build_response(
             "What is your best callback number?",
             output_contexts=[create_context(get_session_path(
-                req), "collect_urgent_phone", 5, parameters={"practitioner": practitioner_input})]
+                req), "collect_urgent_phone", 2, parameters={"practitioner": practitioner_input})]
         )
 
-    # 6. Collect phone for urgent refill
+    # 8. Collect phone for urgent refill
     if "collect_urgent_phone" in context_names:
         phone_input = user_input
         SessionManager.set(session_id, "urgent_phone", phone_input)
         return build_response(
             "Thank you, we will get back with you and discuss your options. Do you have any other questions?",
-            suggestions=["No", "Yes"],
+            # suggestions=["No", "Yes"],
             output_contexts=[create_context(
-                get_session_path(req), "prescription_followup", 5)]
+                get_session_path(req), "prescription_followup", 2)]
         )
 
-    # 7. Change prescription flow
+    # 9. Change prescription flow
     if "change_prescription_decision" in context_names:
         if "yes" in user_input:
             return existing_patient_handler(session_id, req)
         else:
             return build_response(
                 "Okay. If you need anything else, let us know.",
-                suggestions=["I'm all set", "Prescription",
-                             "Insurance", "Billing"],
+                # suggestions=["I'm all set", "Prescription",
+                #              "Insurance", "Billing"],
                 output_contexts=[]
             )
 
@@ -1637,7 +1685,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
         return build_response(
             "We will check your practitioner's availability and call you back to set up the soonest appointment. Can you provide me with your phone number?",
             output_contexts=[create_context(get_session_path(
-                req), "collect_side_effect_phone", 5, parameters={"practitioner": practitioner_input})]
+                req), "collect_side_effect_phone", 2, parameters={"practitioner": practitioner_input})]
         )
 
     # 9. Side effect phone collection
@@ -1646,9 +1694,9 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
         SessionManager.set(session_id, "side_effect_phone", phone_input)
         return build_response(
             "Thank you. Someone from the clinic will call you to help schedule your appointment. Anything else?",
-            suggestions=["No", "Yes"],
+            # suggestions=["No", "Yes"],
             output_contexts=[create_context(
-                get_session_path(req), "prescription_followup", 5)]
+                get_session_path(req), "prescription_followup", 2)]
         )
 
     # 10. Billing decision
@@ -1658,8 +1706,8 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
         else:
             return build_response(
                 "Let us know if you have any other questions.",
-                suggestions=["Book Appointment", "Prescription",
-                             "Contact Provider", "Insurance"],
+                # suggestions=["Book Appointment", "Prescription",
+                #              "Contact Provider", "Insurance"],
                 output_contexts=[]
             )
 
@@ -1673,9 +1721,19 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
         else:
             return build_response(
                 "How else can I help you?",
-                suggestions=["Book Appointment", "Prescription",
-                             "Insurance", "Contact Provider"]
+                # suggestions=["Book Appointment", "Prescription",
+                #              "Insurance", "Contact Provider"]
             )
+
+    # 12. If nothing else matched, fallback
+    return build_response(
+        "I didn’t quite catch that. Are you asking about your prescription? Please rephrase your question or choose an option below.",
+        # suggestions=["Refill Request", "Prescription Question",
+        #              "Speak to Provider", "Return to Main Menu"],
+        output_contexts=[create_context(
+            get_session_path(req), "prescription_followup", 4)]
+    )
+
 
 # --------------------
 # INSURANCE FLOW
@@ -1818,7 +1876,7 @@ def fallback_handler(session_id: str, req: Dict) -> Dict:
     if any(word in query_text for word in ["appointment", "schedule", "book"]):
         return appointment_entry_handler(session_id, req)
 
-    elif any(word in query_text for word in ["prescription", "medication", "refill"]):
+    elif any(word in query_text for word in ["prescription", "prescriptions", "medication", "refill"]):
         return prescription_entry_handler(session_id, req)
 
     elif any(word in query_text for word in ["insurance", "coverage"]):
@@ -2028,8 +2086,10 @@ def process_message(request_data: dict) -> dict:
 
     elif intent_name == "confirm_appointment":
         return appointment_complete_response_handler(session_id, request_data)
+
     elif intent_name == "collect_phone":
         return collect_phone_final_handler(session_id, request_data)
+
     # ===== FALLBACK =====
     return build_response(
         "I'm not sure how to help with that. Would you like to schedule an appointment?",
