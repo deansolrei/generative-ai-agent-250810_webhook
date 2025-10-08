@@ -1441,7 +1441,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
     context_names = [c['name'].split('/')[-1] for c in contexts]
     clinic_phone_number = CLINIC_INFO.get('phone', "407-638-8903")
 
-    faqs = load_prescription_faq_from_gsheet()
+    faqs = load_faq_from_gsheet(SHEET_ID, "prescription_faq")
     answer = match_faq_answer(user_input, faqs, clinic_phone_number)
 
     # 1. Initial step: user just selected "prescription" from the button
@@ -1516,7 +1516,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
             )
 
         # Try FAQ matching first for any other input
-        faqs = load_prescription_faq_from_gsheet()
+        faqs = load_faq_from_gsheet(SHEET_ID, "prescription_faq")
         clinic_phone_number = CLINIC_INFO.get('phone', "407-638-8903")
         answer = match_faq_answer(user_input, faqs, clinic_phone_number)
         if answer:
@@ -1542,7 +1542,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
 
     # 5. Prescription Question Context
     if "prescription_question" in context_names:
-        faqs = load_prescription_faq_from_gsheet()
+        faqs = load_faq_from_gsheet(SHEET_ID, "prescription_faq")
         clinic_phone_number = CLINIC_INFO.get('phone', "407-638-8903")
         answer = match_faq_answer(user_input, faqs, clinic_phone_number)
         if answer:
