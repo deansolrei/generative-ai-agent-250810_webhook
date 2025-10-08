@@ -1,7 +1,2 @@
-Flask==3.0.3
+Flask==2.3.3
 gunicorn==21.2.0
-google-auth==2.35.0
-requests==2.32.3
-google-api-python-client==2.127.0
-google-cloud-dialogflow==2.21.0
-google-cloud-logging==3.5.0
