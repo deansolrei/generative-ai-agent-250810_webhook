@@ -1,6 +1,7 @@
 # ============================================================================
 # TOP-LEVELCODE
 # ============================================================================
+from typing import Dict
 from google.oauth2.service_account import Credentials
 import gspread
 from collections import defaultdict
@@ -344,8 +345,374 @@ def appointment_entry_handler(session_id: str, req: Dict) -> Dict:
     )
     return build_response(text, suggestions, [context])
 
+# =======================
+# NEW PATIENT HANDLERS
+# =======================
+
+
+def new_patient_handler(session_id: str, req: Dict) -> Dict:
+    """
+    Handle new patient flow - start by collecting both first and last name in one step.
+    """
+    SessionManager.set(session_id, "patient_type", "new")
+    return build_response(
+        "Welcome! I'll help you schedule your first appointment. 🌟\n\n"
+        "Let's start with your name. Please provide your first and last name (for example: Jane Doe).",
+        output_contexts=[
+            create_context(
+                get_session_path(req),
+                "collect_new_patient_name",  # Use new combined handler
+                lifespan=5,
+                parameters={
+                    "patient_type": "new",
+                    "flow": "appointment"
+                }
+            ),
+            # Clear the previous context
+            create_context(
+                get_session_path(req),
+                "awaiting_patient_type",
+                lifespan=0
+            )
+        ]
+    )
+
+
+def collect_new_patient_name_handler(session_id: str, req: Dict) -> Dict:
+    """
+    Collect and separate new patient's first and last name from one input.
+    """
+    full_name_input = req['queryResult']['queryText'].strip()
+    name_parts = full_name_input.split()
+    if len(name_parts) < 2:
+        # Fallback: Ask for both names again
+        return build_response(
+            "Please provide both your first and last name (for example: Jane Doe).",
+            output_contexts=[
+                create_context(
+                    get_session_path(req),
+                    "collect_new_patient_name",
+                    lifespan=5,
+                    parameters={"patient_type": "new"}
+                )
+            ]
+        )
+    first_name = name_parts[0].title()
+    last_name = " ".join(name_parts[1:]).title()
+    full_name = f"{first_name} {last_name}"
+    SessionManager.set(session_id, "first_name", first_name)
+    SessionManager.set(session_id, "last_name", last_name)
+    SessionManager.set(session_id, "patient_name", full_name)
+    return build_response(
+        f"Thank you, {first_name}! I would like to collect some information so we can get an appointment scheduled for you.\nFirst, what state do you live in?",
+        output_contexts=[
+            create_context(
+                get_session_path(req),
+                "collect_new_patient_state",
+                lifespan=5,
+                parameters={
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "patient_name": full_name,
+                    "patient_type": "new",
+                    "flow": "appointment"
+                }
+            ),
+            create_context(
+                get_session_path(req),
+                "collect_new_patient_name",
+                lifespan=0
+            )
+        ]
+    )
+
+
+def collect_new_patient_state_handler(session_id: str, req: Dict) -> Dict:
+    """
+    Handle state collection and verify licensing; uses first name for conversational flow.
+    """
+    state_input = req.get("queryResult", {}).get("queryText", "").strip()
+    params = get_context_parameters(req, 'collect_new_patient_state')
+    patient_name = params.get('patient_name', '')
+    first_name = params.get('first_name', '')
+
+    if not patient_name or not first_name:
+        first_name = SessionManager.get(session_id, "first_name", "")
+        last_name = SessionManager.get(session_id, "last_name", "")
+        patient_name = f"{first_name} {last_name}".strip()
+
+    # Normalize state input
+        state = state_input.lower()
+        state_abbr = LICENSED_STATES.get(state, state.upper())
+        practitioners_available = get_practitioners_in_state(state_abbr)
+
+    def get_practitioners_in_state(state_abbr: str) -> list:
+        """
+        Returns a list of practitioners licensed in the given state abbreviation.
+        """
+        return [
+            practitioner for practitioner in PRACTITIONERS.values()
+            if state_abbr in practitioner.get("states", [])
+        ]
+
+    if practitioners_available:
+        SessionManager.set(session_id, "patient_state", state_abbr)
+        text = (
+            f"Great news, {first_name}! We have {len(practitioners_available)} practitioner(s) "
+            f"licensed in {state_abbr}. 🎉\n\n"
+            "Next, I'll need information about your insurance. Could you tell me who your insurance carrier is?"
+        )
+        suggestions = ["Aetna", "Cigna",
+                       "United Healthcare", "BCBS", "Self-Pay", "Other"]
+        return build_response(
+            text,
+            suggestions=suggestions,
+            output_contexts=[
+                create_context(
+                    get_session_path(req),
+                    "collect_new_patient_insurance",
+                    lifespan=5,
+                    parameters={
+                        "patient_name": patient_name,
+                        "patient_state": state_abbr,
+                        "patient_type": "new"
+                    }
+                ),
+                create_context(
+                    get_session_path(req),
+                    "collect_new_patient_state",
+                    lifespan=0
+                )
+            ]
+        )
+    else:
+        # Handle no practitioners case
+        text = (
+            f"I'm sorry, {first_name}, but we don't currently have practitioners licensed in {state_input}. "
+            "We're expanding to new states regularly.\n\n"
+            "Would you like to try another state?"
+        )
+        return build_response(
+            text,
+            suggestions=["Try Another State", "Join Waitlist"],
+            output_contexts=[
+                create_context(
+                    get_session_path(req),
+                    "handle_no_practitioners_state",
+                    lifespan=5,
+                    parameters={
+                        "patient_name": patient_name,
+                        "attempted_state": state_input
+                    }
+                ),
+                create_context(
+                    get_session_path(req),
+                    "collect_new_patient_state",
+                    lifespan=0
+                )
+            ]
+        )
+
+
+def collect_new_patient_insurance_handler(session_id: str, req: Dict) -> Dict:
+    """
+    Collect patient's insurance information and prompt for visit type choice.
+    """
+    params = get_context_parameters(req, 'collect_new_patient_insurance')
+    patient_name = params.get('patient_name', '')
+    patient_state = params.get('patient_state', '')
+
+    if not patient_name:
+        first_name = SessionManager.get(session_id, "first_name", "")
+        last_name = SessionManager.get(session_id, "last_name", "")
+        patient_name = f"{first_name} {last_name}".strip()
+
+    insurance = req['queryResult']['queryText'].strip()
+    SessionManager.set(session_id, "insurance_type", insurance)
+    first_name = patient_name.split()[0] if patient_name else "there"
+
+    # Slightly updated explanation, guiding to next step
+    return build_response(
+        (
+            f"Excellent! We have practitioners who are in network with {insurance}. "
+            "Now, let's determine the best way to get you started.\n"
+            "For new patients, we offer a free 15-minute **phone consultation**.\n"
+            "It is not a clinical visit, but is informational and can help determine "
+            "if we are a good fit for each other.\n\n"
+            "The other option, which will get you started more quickly, "
+            "is a 55-minute **Initial Assessment** done via telehealth. "
+            "This is a clinical appointment where your practitioner will start the process of treatment. "
+            "Sometimes medications are prescribed if that is what the practitioner determines. "
+            "It's basically a way to get you started with treatment as soon as possible. "
+            "Do you have a preference?"
+        ),
+        output_contexts=[
+            create_context(
+                get_session_path(req),
+                "select_new_visit_type",
+                lifespan=5,
+                parameters={
+                    "patient_name": patient_name,
+                    "patient_state": patient_state,
+                    "insurance_type": insurance
+                }
+            ),
+            create_context(
+                get_session_path(req),
+                "collect_new_patient_insurance",
+                lifespan=0
+            )
+        ],
+        suggestions=[
+            "Phone Consultation",
+            "Initial Assessment",
+        ]
+    )
+
+
+def select_new_visit_type_handler(session_id: str, req: Dict) -> Dict:
+    """
+    Handle visit type selection, with fallback to explanations and re-prompt.
+    """
+    choice = req.get("queryResult", {}).get("queryText", "").lower()
+    # If user asks for explanation or doesn't select a button, fallback
+    if "explain" in choice or "difference" in choice or "what" in choice or "help" in choice:
+        text = (
+            "Let me explain both options:\n\n"
+            "**Free Phone Consultation (15 min):**\n"
+            "• No cost to you\n"
+            "• Brief discussion of your needs\n"
+            "• Determine if we're a good fit\n"
+            "• No prescriptions\n\n"
+            "**Initial Assessment (55 min):**\n"
+            "• Comprehensive evaluation\n"
+            "• Create treatment plan\n"
+            "• Prescriptions if appropriate\n"
+            "• Covered by most insurance\n\n"
+            "Which would you prefer?"
+        )
+        suggestions = ["Phone Consultation", "Initial Assessment"]
+        return build_response(
+            text,
+            suggestions=suggestions,
+            output_contexts=[
+                create_context(
+                    get_session_path(req),
+                    "select_new_visit_type",
+                    lifespan=5,
+                    parameters=get_context_parameters(
+                        req, "select_new_visit_type")
+                )
+            ]
+        )
+    elif "consultation" in choice or "free" in choice:
+        return phone_consultation_handler(session_id, req)
+    elif "assessment" in choice or "initial" in choice:
+        return initial_assessment_handler(session_id, req)
+    else:
+        # Fallback: re-prompt user to select one of the options
+        text = (
+            "Please select one of the options to continue:\n"
+            "• Phone Consultation\n"
+            "• Initial Assessment"
+        )
+        suggestions = ["Phone Consultation", "Initial Assessment"]
+        return build_response(
+            text,
+            suggestions=suggestions,
+            output_contexts=[
+                create_context(
+                    get_session_path(req),
+                    "select_new_visit_type",
+                    lifespan=5,
+                    parameters=get_context_parameters(
+                        req, "select_new_visit_type")
+                )
+            ]
+        )
+
 # [--- NEW PATIENT HANDLERS, PHONE CONSULTATION HANDLERS, INITIAL ASSESSMENT HANDLERS, EXISTING PATIENT HANDLERS, ETC. ---]
 # [Include your original logic, but ensure each handler always provides a fallback: e.g., instead of error returns, always guide the user back into the correct flow or offer to escalate.]
+
+
+def phone_consultation_handler(session_id: str, req: Dict) -> Dict:
+    """
+    Handle the flow for scheduling a free phone consultation for new patients.
+    """
+    params = get_context_parameters(req, 'select_new_visit_type')
+    patient_name = params.get('patient_name', '')
+    patient_state = params.get('patient_state', '')
+    insurance_type = params.get('insurance_type', '')
+
+    first_name = patient_name.split()[0] if patient_name else "there"
+
+    text = (
+        f"Great, {first_name}! We'll schedule a free 15-minute phone consultation for you. "
+        "Please provide your phone number so we can reach you at the scheduled time."
+    )
+    suggestions = ["Enter Phone Number", "Return to Main Menu"]
+    return build_response(
+        text,
+        suggestions=suggestions,
+        output_contexts=[
+            create_context(
+                get_session_path(req),
+                "collect_phone_for_consultation",
+                lifespan=5,
+                parameters={
+                    "patient_name": patient_name,
+                    "patient_state": patient_state,
+                    "insurance_type": insurance_type,
+                    "visit_type": "phone_consultation"
+                }
+            ),
+            create_context(
+                get_session_path(req),
+                "select_new_visit_type",
+                lifespan=0
+            )
+        ]
+    )
+
+
+def initial_assessment_handler(session_id: str, req: Dict) -> Dict:
+    """
+    Handle the flow for scheduling an initial assessment for new patients.
+    """
+    params = get_context_parameters(req, 'select_new_visit_type')
+    patient_name = params.get('patient_name', '')
+    patient_state = params.get('patient_state', '')
+    insurance_type = params.get('insurance_type', '')
+
+    first_name = patient_name.split()[0] if patient_name else "there"
+
+    text = (
+        f"Awesome, {first_name}! We'll schedule a 55-minute initial assessment for you via telehealth. "
+        "Please provide your phone number so we can confirm your appointment and send you the telehealth link."
+    )
+    suggestions = ["Enter Phone Number", "Return to Main Menu"]
+    return build_response(
+        text,
+        suggestions=suggestions,
+        output_contexts=[
+            create_context(
+                get_session_path(req),
+                "collect_phone_for_initial_assessment",
+                lifespan=5,
+                parameters={
+                    "patient_name": patient_name,
+                    "patient_state": patient_state,
+                    "insurance_type": insurance_type,
+                    "visit_type": "initial_assessment"
+                }
+            ),
+            create_context(
+                get_session_path(req),
+                "select_new_visit_type",
+                lifespan=0
+            )
+        ]
+    )
 
 # ============================================================================
 # PRESCRIPTION HANDLERS
@@ -452,6 +819,10 @@ INTENT_HANDLERS = {
     "billing_entry": billing_entry_handler,
     "practitioner_message_entry": practitioner_message_entry_handler,
     "general_information": general_information_handler,
+    "collect_new_patient_name": collect_new_patient_name_handler,
+    "collect_new_patient_state": collect_new_patient_state_handler,
+    "collect_new_patient_insurance": collect_new_patient_insurance_handler,
+    "select_new_visit_type": select_new_visit_type_handler,
     # [Add the rest of your mapping here for all handlers above]
 }
 
