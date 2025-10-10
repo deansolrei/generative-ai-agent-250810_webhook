@@ -1123,9 +1123,17 @@ def appointment_complete_response_handler(session_id, req, user_input):
 
         # FIX: Accept more flexible negative responses using "in" logic, not just exact match
         if any(resp in normalized_input for resp in negative_responses):
+            # Retrieve practitioner from session if available
+            practitioner_id = SessionManager.get(
+                session_id, "practitioner_id", None)
+            if practitioner_id and practitioner_id in PRACTITIONERS:
+                practitioner = PRACTITIONERS[practitioner_id]
+                practitioner_name = f"{practitioner['first_name']} {practitioner['last_name']}"
+            else:
+                practitioner_name = "Your Practitioner"
             goodbye_text = (
                 f"Perfect! You're all set, {first_name}! 😊\n\n"
-                f"We'll see you on {appointment_date} at {appointment_time}.\n"
+                f"{practitioner_name} will see you for your telehealth appointment {appointment_date} at {appointment_time}.\n"
                 f"Your confirmation number is {confirmation_number}.\n\n"
                 "Have a wonderful day! 👋"
             )
@@ -1211,7 +1219,7 @@ def collect_existing_patient_name_handler(session_id: str, req: Dict) -> Dict:
         f" {p['first_name']} {p['last_name']}" for p in PRACTITIONERS.values()]
     return build_response(
         text,
-        suggestions=practitioner_names,
+        # suggestions=practitioner_names,
         output_contexts=[
             create_context(get_session_path(
                 req), "collect_existing_patient_name", lifespan=0),
@@ -1259,9 +1267,9 @@ def collect_existing_patient_practitioner_handler(session_id: str, req: Dict) ->
             f"• {p['first_name']} {p['last_name']}, PMHNP-BC" for p in PRACTITIONERS.values()
         ]
         return build_response(
-            "I couldn't find that practitioner in our system. "
+            "I couldn't find that provider in our system. "
             "Here are our available practitioners:\n\n" + "\n".join(practitioners_list) +
-            "\n\nWhich practitioner would you like to see?",
+            "\n\nWhich provider would you like to see?",
             suggestions=[
                 f"• {p['first_name']} {p['last_name']}, PMHNP-BC" for p in PRACTITIONERS.values()
             ],
@@ -1391,18 +1399,24 @@ def collect_phone_final_handler(session_id: str, req: Dict) -> Dict:
         practitioner = PRACTITIONERS[practitioner_id]
         practitioner_name = f"{practitioner['first_name']} {practitioner['last_name']}, PMHNP-BC"
     else:
-        practitioner_name = "Your Practitioner"
+        practitioner_name = "Your Provider"
 
     # IF CLIENT USES MARKDOWN
     confirmation_text = (
-        "Perfect! Your appointment is confirmed! 🎉📋\n\n"
-        "**Appointment Details:**\n"
-        f"**Patient:** {patient_name}\n"
-        f"**Practitioner:** {practitioner_name}\n"
-        f"**Date:** {appointment_date}\n"
-        f"**Time:** {appointment_time}\n"
-        f"**Phone:** {formatted_phone}\n"
-        f"**Confirmation #:** {confirmation_number}\n\n"
+        "Perfect! Your telehealth appointment is confirmed! 🎉📋\n\n"
+        f" - Appointment Details:\n\n"
+        f" - Patient: {patient_name}\n\n"
+
+        f" - Practitioner: {practitioner_name}\n\n"
+
+        f" - Date: {appointment_date}\n\n"
+
+        f" - Time: {appointment_time}\n\n"
+
+        f" - Phone: {formatted_phone}\n\n"
+
+        f" - Confirmation #: {confirmation_number}\n\n\n"
+
         "You'll receive a text message reminder 24 hours before your appointment.\n\n"
         f"Is there anything else I can help you with today, {first_name}?"
     )
@@ -1419,15 +1433,16 @@ def collect_phone_final_handler(session_id: str, req: Dict) -> Dict:
                 "patient_name": patient_name
             })
         ],
-        suggestions=[
-            "I'm all set\n\n",
-            "Prescription",
-            "Insurance",
-            "Billing",
-            "Contact Provider",
-            "General Info"
-        ]
+        # suggestions=[
+        #     "I'm all set\n\n",
+        #     "Prescription",
+        #     "Insurance",
+        #     "Billing",
+        #     "Contact Provider",
+        #     "General Info"
+        # ]
     )
+
 
 # --------------------
 # PRESCRIPTION FLOW
@@ -1483,6 +1498,16 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
             # suggestions=["Yes", "No"],
             output_contexts=[create_context(get_session_path(
                 req), "change_prescription_decision", 2)]
+        )
+
+    if answer:
+        return build_response(answer)
+    # Only if no match, consider routing to insurance
+    if "insurance" in user_input:
+        # Optionally: ask for clarification before routing
+        return build_response(
+            "Are you asking about prescription coverage or general insurance? Please clarify.",
+            suggestions=["Prescription coverage", "General insurance"]
         )
 
     # # 4. If no context is present, try FAQ matching first
