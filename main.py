@@ -319,7 +319,7 @@ def welcome_handler(session_id: str, req: Dict) -> Dict:
         "💊 Prescriptions",
         "🏥 Insurance",
         "💰 Billing",
-        "📞 Contact Practitioner",
+        "📞 Contact Provider",
         "ℹ️ General Information"
     ]
     return build_response(text, suggestions)
@@ -814,12 +814,19 @@ INTENT_HANDLERS = {
     "greeting": welcome_handler,
     "start": welcome_handler,
     "appointment_entry": appointment_entry_handler,
+    "new_patient_handler": new_patient_handler,
+    "collect_new_patient_name": collect_new_patient_name_handler,
+    "collect_new_patient_state": collect_new_patient_state_handler,
+    "collect_new_patient_insurance": collect_new_patient_insurance_handler,
+    "select_new_visit_type": select_new_visit_type_handler,
+
     "prescription_entry": prescription_entry_handler,
+
     "insurance_entry": insurance_entry_handler,
     "billing_entry": billing_entry_handler,
     "practitioner_message_entry": practitioner_message_entry_handler,
     "general_information": general_information_handler,
-    "collect_new_patient_name": collect_new_patient_name_handler,
+
     "collect_new_patient_state": collect_new_patient_state_handler,
     "collect_new_patient_insurance": collect_new_patient_insurance_handler,
     "select_new_visit_type": select_new_visit_type_handler,
