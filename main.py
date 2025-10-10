@@ -267,7 +267,7 @@ def load_faq_from_gsheet(sheet_id, worksheet_name):
 
 
 def appointment_entry_handler(session_id: str, req: Dict) -> Dict:
-    faqs = load_faq_from_gsheet(SHEET_ID, "appoinment_faq")
+    faqs = load_faq_from_gsheet(SHEET_ID, "appointment_faq")
     # ... use faqs in your logic …
 
 
@@ -516,6 +516,10 @@ def welcome_handler(session_id: str, req: Dict) -> Dict:
 
     return build_response(text, suggestions)
 
+# =======================
+# APPOINTMENT HANDLERS
+# =======================
+
 
 def appointment_entry_handler(session_id: str, req: Dict) -> Dict:
     """Enhanced appointment entry with motivation"""
@@ -537,6 +541,11 @@ def appointment_entry_handler(session_id: str, req: Dict) -> Dict:
     )
 
     return build_response(text, suggestions, [context])
+
+
+# =======================
+# NEW PATIENT HANDLERS
+# =======================
 
 
 def new_patient_handler(session_id: str, req: Dict) -> Dict:
@@ -812,6 +821,11 @@ def select_new_visit_type_handler(session_id: str, req: Dict) -> Dict:
         return build_response(text, suggestions)
 
 
+# =======================
+# PHONE CONSULTATION HANDLERS
+# =======================
+
+
 def phone_consultation_handler(session_id: str, req: Dict) -> Dict:
     """Handle phone consultation scheduling"""
     patient_name = SessionManager.get(session_id, "patient_name", "")
@@ -900,7 +914,7 @@ def collect_phone_consultation_handler(session_id: str, req: Dict) -> Dict:
     )
 
 # -----------------------
-# INITIAL ASSESSMENT FLOW
+# INITIAL ASSESSMENT HANDLERS
 # -----------------------
 
 
@@ -1174,7 +1188,7 @@ def appointment_complete_response_handler(session_id, req, user_input):
 
 
 # --------------------
-# EXISTING PATIENT FLOW
+# EXISTING PATIENT HANDLERS
 # --------------------
 
 def existing_patient_handler(session_id: str, req: Dict) -> Dict:
@@ -1445,7 +1459,7 @@ def collect_phone_final_handler(session_id: str, req: Dict) -> Dict:
 
 
 # --------------------
-# PRESCRIPTION FLOW
+# PRESCRIPTION HANDLERS
 # --------------------
 
 
@@ -1485,10 +1499,9 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
                 output_contexts=[create_context(
                     get_session_path(req), "prescription_followup", 2)]
             )
-        # If no FAQ match, continue to custom prescription logic
 
+    # If no FAQ match, continue to custom prescription logic
     # 3. Custom prescription logic (if needed)
-    # For example:
     if "change my prescription" in user_input or "switch" in user_input or "different" in user_input:
         text = (
             "Requesting a prescription change is something you will need to discuss with your practitioner and will require an appointment. Would you like to schedule an appointment?"
@@ -1509,26 +1522,6 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
             "Are you asking about prescription coverage or general insurance? Please clarify.",
             suggestions=["Prescription coverage", "General insurance"]
         )
-
-    # # 4. If no context is present, try FAQ matching first
-    # if not context_names:
-    #     faqs = load_prescription_faq_from_gsheet()
-    #     clinic_phone_number = CLINIC_INFO.get('phone', "407-638-8903")
-    #     answer = match_faq_answer(user_input, faqs, clinic_phone_number)
-    #     if answer:
-    #         return build_response(
-    #             answer,
-    #             suggestions=["No", "Yes"],
-    #             output_contexts=[create_context(
-    #                 get_session_path(req), "prescription_followup", 5)]
-    #         )
-    #     # If no match, start prescription flow
-    #     return build_response(
-    #         "Can you tell me more about your prescription question?",
-    #         suggestions=["Refill Request", "Prescription Question"],
-    #         output_contexts=[create_context(get_session_path(
-    #             req), "awaiting_prescription_action", 2)]
-    #     )
 
     # 4. Awaiting prescription action or entry
     if "awaiting_prescription_action" in context_names or "prescription_entry" in context_names:
@@ -1702,7 +1695,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
                 output_contexts=[]
             )
 
-    # 8. Side effect practitioner collection
+    # 10. Side effect practitioner collection
     if "collect_side_effect_practitioner" in context_names:
         practitioner_input = user_input.title()
         SessionManager.set(
@@ -1713,7 +1706,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
                 req), "collect_side_effect_phone", 2, parameters={"practitioner": practitioner_input})]
         )
 
-    # 9. Side effect phone collection
+    # 11. Side effect phone collection
     if "collect_side_effect_phone" in context_names:
         phone_input = user_input
         SessionManager.set(session_id, "side_effect_phone", phone_input)
@@ -1724,7 +1717,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
                 get_session_path(req), "prescription_followup", 2)]
         )
 
-    # 10. Billing decision
+    # 12. Billing decision
     if "prescription_billing_decision" in context_names:
         if "yes" in user_input:
             return billing_entry_handler(session_id, req)
@@ -1736,7 +1729,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
                 output_contexts=[]
             )
 
-    # 11. Followup: "Anything else?" after prescription flow
+    # 13. Followup: "Anything else?" after prescription flow
     if "prescription_followup" in context_names:
         if any(word in user_input for word in ["no", "all set", "nothing", "bye", "thanks"]):
             return build_response(
@@ -1750,7 +1743,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
                 #              "Insurance", "Contact Provider"]
             )
 
-    # 12. If nothing else matched, fallback
+    # 14. If nothing else matched, fallback
     return build_response(
         "I didn’t quite catch that. Are you asking about your prescription? Please rephrase your question or choose an option below.",
         # suggestions=["Refill Request", "Prescription Question",
@@ -1761,7 +1754,7 @@ def prescription_entry_handler(session_id: str, req: Dict) -> Dict:
 
 
 # --------------------
-# INSURANCE FLOW
+# INSURANCE HANDLERS
 # --------------------
 
 
@@ -1781,7 +1774,7 @@ def insurance_entry_handler(session_id: str, req: Dict) -> Dict:
 
 
 # --------------------
-# BILLING FLOW
+# BILLING HANDLERS
 # --------------------
 
 
@@ -1795,7 +1788,7 @@ def billing_entry_handler(session_id: str, req: Dict) -> Dict:
 
 
 # --------------------
-# PRACTITIONER MESSAGE FLOW
+# PRACTITIONER MESSAGE HANDLERS
 # --------------------
 
 
@@ -1816,7 +1809,7 @@ def practitioner_message_entry_handler(session_id: str, req: Dict) -> Dict:
 
 
 # --------------------
-# GENERAL INFO FLOW
+# GENERAL INFO HANDLERS
 # --------------------
 
 
@@ -1985,6 +1978,9 @@ def awaiting_help_response_handler(session_id: str, req: Dict) -> Dict:
         )
 
 
+# --------------------
+# INTENT HANDLERS MAPPING
+# --------------------
 # Update INTENT_HANDLERS so those that need user_input get it!
 INTENT_HANDLERS = {
     # Welcome/Start
