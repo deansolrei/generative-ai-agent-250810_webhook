@@ -238,6 +238,36 @@ def match_faq_answer(user_input, faqs, clinic_phone_number):
                 return answer
     return None
 
+
+def generate_appointment_slots(base_date: datetime = None) -> List[Dict]:
+    """Generate available appointment slots"""
+    if not base_date:
+        base_date = datetime.now()
+
+    slots = []
+    days_ahead = [1, 2, 3, 4, 5, 7, 8]  # Skip today and weekend
+    times = ["9:00 AM", "10:00 AM", "11:00 AM",
+             "2:00 PM", "3:00 PM", "4:00 PM"]
+
+    for days in days_ahead[:6]:  # Show 6 slots
+        date = base_date + timedelta(days=days)
+        if date.weekday() < 5:  # Weekday only
+            time = random.choice(times)
+            slots.append({
+                "date": date.strftime("%A, %B %d"),
+                "time": time,
+                "datetime": date.strftime("%Y-%m-%d")
+            })
+
+    return slots
+
+
+def generate_confirmation_number() -> str:
+    """Generate unique confirmation number"""
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    random_suffix = random.randint(100, 999)
+    return f"SBH{timestamp[-6:]}{random_suffix}"
+
 # ============================================================================
 # RESPONSE BUILDERS
 # ============================================================================
@@ -377,6 +407,8 @@ def new_patient_handler(session_id: str, req: Dict) -> Dict:
         ]
     )
 
+
+# COLLECT NEW PATIENT HANDLERS
 
 def collect_new_patient_name_handler(session_id: str, req: Dict) -> Dict:
     """
@@ -570,6 +602,11 @@ def collect_new_patient_insurance_handler(session_id: str, req: Dict) -> Dict:
     )
 
 
+# =======================
+# SELECT NEW VISIT TYPE HANDLERS
+# =======================
+
+
 def select_new_visit_type_handler(session_id: str, req: Dict) -> Dict:
     """
     Handle visit type selection, with fallback to explanations and re-prompt.
@@ -631,88 +668,645 @@ def select_new_visit_type_handler(session_id: str, req: Dict) -> Dict:
             ]
         )
 
-# [--- NEW PATIENT HANDLERS, PHONE CONSULTATION HANDLERS, INITIAL ASSESSMENT HANDLERS, EXISTING PATIENT HANDLERS, ETC. ---]
-# [Include your original logic, but ensure each handler always provides a fallback: e.g., instead of error returns, always guide the user back into the correct flow or offer to escalate.]
+# Ensure each handler always provides a fallback: e.g., instead of error returns, always guide the user back into the correct flow or offer to escalate.
+
+
+# =======================
+# PHONE CONSULTATION HANDLERS
+# =======================
 
 
 def phone_consultation_handler(session_id: str, req: Dict) -> Dict:
-    """
-    Handle the flow for scheduling a free phone consultation for new patients.
-    """
-    params = get_context_parameters(req, 'select_new_visit_type')
-    patient_name = params.get('patient_name', '')
-    patient_state = params.get('patient_state', '')
-    insurance_type = params.get('insurance_type', '')
-
+    """Handle phone consultation scheduling"""
+    patient_name = SessionManager.get(session_id, "patient_name", "")
     first_name = patient_name.split()[0] if patient_name else "there"
 
     text = (
-        f"Great, {first_name}! We'll schedule a free 15-minute phone consultation for you. "
-        "Please provide your phone number so we can reach you at the scheduled time."
+        f"Excellent choice, {first_name}! The free consultation is a great way to start. 📞\n\n"
+        "To schedule your consultation, I just need your phone number. "
+        "Someone from our clinic will call you within 1-2 business days "
+        "to schedule the 15 minute phone consult.\n\n"
+        "What's the best number to reach you?"
     )
-    suggestions = ["Enter Phone Number", "Return to Main Menu"]
+
+    context = create_context(
+        get_session_path(req),
+        "collect_phone_consultation",
+        parameters={
+            "visit_type": "phone_consultation",
+            "patient_name": patient_name
+        }
+    )
+
+    return build_response(text, output_contexts=[context])
+
+
+def collect_phone_consultation_handler(session_id: str, req: Dict) -> Dict:
+    """Collect phone number for consultation callback"""
+    phone = req['queryResult']['queryText'].strip()
+
+    # Get patient info from context
+    params = get_context_parameters(req, 'collect_phone_consultation')
+    patient_name = params.get('patient_name', '')
+    first_name = patient_name.split()[0] if patient_name else "there"
+
+    # Basic phone validation
+    # Remove common formatting characters
+    cleaned_phone = ''.join(filter(str.isdigit, phone))
+
+    # Check if it's a valid US phone number (10 digits)
+    if len(cleaned_phone) == 10:
+        formatted_phone = f"({cleaned_phone[:3]}) {cleaned_phone[3:6]}-{cleaned_phone[6:]}"
+    elif len(cleaned_phone) == 11 and cleaned_phone[0] == '1':
+        # Handle numbers with country code
+        cleaned_phone = cleaned_phone[1:]
+        formatted_phone = f"({cleaned_phone[:3]}) {cleaned_phone[3:6]}-{cleaned_phone[6:]}"
+    else:
+        # Invalid phone number - ask again
+        return build_response(
+            "I need a valid 10-digit phone number. Please enter it again.\n"
+            "Example: (555) 123-4567 or 5551234567",
+            output_contexts=[create_context(
+                get_session_path(req),
+                "collect_phone_consultation",
+                lifespan=5,
+                parameters=params  # Keep existing parameters
+            )]
+        )
+
+    # Store the consultation request (you might want to save this to a database)
+    SessionManager.set(session_id, "consultation_phone", formatted_phone)
+    SessionManager.set(session_id, "consultation_requested", True)
+
+    # Success response
+    text = (
+        f"Perfect! I have your number as {formatted_phone}. ✅\n\n"
+        f"Someone from our clinic will call you within 1-2 business days "
+        f"to schedule your free consultation with a practitioner.\n\n"
+        f"Is there anything else I can help you with today, {first_name}?"
+    )
+
+    # Clear consultation context and set general help context
     return build_response(
         text,
-        suggestions=suggestions,
-        output_contexts=[
-            create_context(
-                get_session_path(req),
-                "collect_phone_for_consultation",
-                lifespan=5,
-                parameters={
-                    "patient_name": patient_name,
-                    "patient_state": patient_state,
-                    "insurance_type": insurance_type,
-                    "visit_type": "phone_consultation"
-                }
-            ),
-            create_context(
-                get_session_path(req),
-                "select_new_visit_type",
-                lifespan=0
-            )
-        ]
+        output_contexts=[create_context(
+            get_session_path(req),
+            "appointment_complete_response",
+            lifespan=5,
+            parameters={
+                "patient_name": patient_name,
+                "consultation_phone": formatted_phone,
+                "previous_action": "phone_consultation"
+            }
+        )],
+        suggestions=["Book an appointment",
+                     "Questions about services", "No, that's all"]
     )
+
+# -----------------------
+# INITIAL ASSESSMENT HANDLERS
+# -----------------------
 
 
 def initial_assessment_handler(session_id: str, req: Dict) -> Dict:
-    """
-    Handle the flow for scheduling an initial assessment for new patients.
-    """
-    params = get_context_parameters(req, 'select_new_visit_type')
-    patient_name = params.get('patient_name', '')
-    patient_state = params.get('patient_state', '')
-    insurance_type = params.get('insurance_type', '')
+    """Handle initial assessment scheduling"""
+    patient_name = SessionManager.get(session_id, "patient_name", "")
+    first_name = patient_name.split()[0] if patient_name else "there"
 
+    # Generate appointment slots
+    slots = generate_appointment_slots()
+
+    # Format slots for display as a bulleted list
+    slot_text = ""
+    for i, slot in enumerate(slots, 1):
+        slot_text += f"•{i}. {slot['date']} at {slot['time']}\n"
+
+    SessionManager.set(session_id, "appointment_slots", slots)
+
+    text = (
+        f"I think that's a great decision, {first_name}!\n"
+        "Let me check what available times and dates we may have available "
+        "so we can schedule your initial assessment. 🗓️\n\n"
+        f"Here are our next available slots: \n\n{slot_text}"
+        "Please type the number of your preferred slot (1-6) "
+        "or you can tell me when you'd like to schedule the telehealth visit."
+    )
+
+    suggestions = ["1", "2", "3", "4", "5", "6", "Different Times"]
+
+    context = create_context(
+        get_session_path(req),
+        "select_appointment_slot",
+        parameters={
+            "visit_type": "initial_assessment",
+            "patient_name": patient_name,
+            "slots": slots
+        }
+    )
+
+    return build_response(text, suggestions, [context])
+
+
+def select_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
+    """Handle appointment slot selection"""
+
+    # Get the slot number and convert to int (CHANGED SECTION)
+    slot_number_raw = req['queryResult']['parameters'].get('number', 0)
+    slot_number = int(slot_number_raw) if slot_number_raw else 0
+
+    # Get slots and patient name from context (NO CHANGE)
+    params = get_context_parameters(req, 'select_appointment_slot')
+    slots = params.get('slots', [])
+    patient_name = params.get('patient_name', '')
+
+    # If patient_name is empty, try to get from session (NO CHANGE)
+    if not patient_name:
+        first_name = SessionManager.get(session_id, "first_name", "")
+        last_name = SessionManager.get(session_id, "last_name", "")
+        patient_name = f"{first_name} {last_name}".strip()
+
+    # Validate slot selection (NO CHANGE)
+    if not (1 <= slot_number <= len(slots)):
+        return build_response(
+            f"Please select a number between 1 and {len(slots)}",
+            output_contexts=[create_context(
+                get_session_path(req),
+                "select_appointment_slot",
+                lifespan=5,
+                parameters=params
+            )]
+        )
+
+    selected_slot = slots[slot_number - 1]  # NOW THIS WORKS!
+
+    # Store appointment details (NO CHANGE)
+    SessionManager.set(session_id, "appointment_date", selected_slot['date'])
+    SessionManager.set(session_id, "appointment_time", selected_slot['time'])
+
+    # Build confirmation message (NO CHANGE)
     first_name = patient_name.split()[0] if patient_name else "there"
 
     text = (
-        f"Awesome, {first_name}! We'll schedule a 55-minute initial assessment for you via telehealth. "
-        "Please provide your phone number so we can confirm your appointment and send you the telehealth link."
+        f"Perfect! I have you scheduled for:\n"
+        f"📅 {selected_slot['date']}\n"
+        f"⏰ {selected_slot['time']}\n\n"
+        f"I just need your phone number to confirm the appointment."
     )
-    suggestions = ["Enter Phone Number", "Return to Main Menu"]
+
     return build_response(
         text,
-        suggestions=suggestions,
         output_contexts=[
+            # Set new context
             create_context(
                 get_session_path(req),
-                "collect_phone_for_initial_assessment",
+                "collect_assessmentphone_final",
                 lifespan=5,
                 parameters={
-                    "patient_name": patient_name,
-                    "patient_state": patient_state,
-                    "insurance_type": insurance_type,
-                    "visit_type": "initial_assessment"
+                    "appointment_date": selected_slot['date'],
+                    "appointment_time": selected_slot['time'],
+                    "patient_name": patient_name
                 }
             ),
-            create_context(
-                get_session_path(req),
-                "select_new_visit_type",
-                lifespan=0
-            )
+            # Clear ALL old contexts explicitly
+            create_context(get_session_path(
+                req), "select_appointment_slot", lifespan=0),
+            create_context(get_session_path(
+                req), "select_new_visit_type", lifespan=0),
+            create_context(get_session_path(
+                req), "collect_new_patient_insurance", lifespan=0)
         ]
     )
+
+
+def collect_assessmentphone_final_handler(session_id: str, req: Dict) -> Dict:
+    """Collect and validate phone number, then confirm appointment"""
+
+    phone_input = req['queryResult']['queryText'].strip()
+
+    # Get appointment details from context
+    params = get_context_parameters(req, 'collect_assessmentphone_final')
+    patient_name = params.get('patient_name', '')
+    appointment_date = params.get('appointment_date', '')
+    appointment_time = params.get('appointment_time', '')
+
+    # Remove all non-numeric characters
+    phone_digits = re.sub(r'\D', '', phone_input)
+
+    # Check if valid US phone number (10 digits, optionally with 1 at start)
+    if phone_digits.startswith('1') and len(phone_digits) == 11:
+        phone_digits = phone_digits[1:]  # Remove country code
+
+    if len(phone_digits) != 10:
+        return build_response(
+            "Please provide a valid 10-digit phone number (like 402-956-3584).",
+            output_contexts=[
+                create_context(
+                    get_session_path(req),
+                    "collect_assessmentphone_final",
+                    lifespan=5,
+                    parameters=params  # Keep the same parameters
+                )
+            ]
+        )
+
+    # Format phone number nicely
+    formatted_phone = f"({phone_digits[:3]}) {phone_digits[3:6]}-{phone_digits[6:]}"
+
+    # Store phone number in session
+    SessionManager.set(session_id, "phone_number", formatted_phone)
+
+    # Get first name for personalized message
+    first_name = patient_name.split()[0] if patient_name else "there"
+
+    # Create confirmation number
+    confirmation_number = generate_confirmation_number()
+
+    # Store appointment details
+    SessionManager.set(session_id, "confirmation_number", confirmation_number)
+
+    # Build confirmation message
+    confirmation_text = (
+        f"Perfect! Your appointment is confirmed! 🎉\n\n"
+        f"📋 **Appointment Details:**\n"
+        f"• Patient: {patient_name}\n"
+        f"• Date: {appointment_date}\n"
+        f"• Time: {appointment_time}\n"
+        f"• Phone: {formatted_phone}\n"
+        f"• Confirmation #: {confirmation_number}\n\n"
+        f"You'll receive a text message reminder 24 hours before your appointment.\n\n"
+        f"Is there anything else I can help you with today, {first_name}?"
+    )
+
+    return build_response(
+        confirmation_text,
+        output_contexts=[
+            # Clear all contexts - appointment is complete
+            create_context(get_session_path(
+                req), "collect_assessment_phone_final", lifespan=0),
+            # Set a general help context
+            create_context(
+                get_session_path(req),
+                "appointment_complete_response",
+                lifespan=5,
+                parameters={
+                    "confirmation_number": confirmation_number,
+                    "appointment_date": appointment_date,
+                    "appointment_time": appointment_time,
+                    "patient_name": patient_name
+                }
+            )
+        ],
+        suggestions=["Schedule another appointment",
+                     "Cancel appointment", "I'm all set"]
+    )
+
+
+def appointment_complete_response_handler(session_id, req, user_input):
+    """Handles appointment_complete_response intent with user input."""
+    try:
+        contexts = req.get("queryResult", {}).get("outputContexts", [])
+        params = {}
+        for context in contexts:
+            if "appointment_complete_response" in context.get("name", ""):
+                params = context.get("parameters", {})
+                break
+
+        patient_name = params.get('patient_name', 'there')
+        appointment_date = params.get('appointment_date', '')
+        appointment_time = params.get('appointment_time', '')
+        confirmation_number = params.get('confirmation_number', '')
+
+        first_name = patient_name.split(
+        )[0] if patient_name and patient_name != 'there' else "there"
+
+        normalized_input = user_input.strip().lower()
+        negative_responses = [
+            "no", "no thanks", "i'm good", "i'm all set", "all set",
+            "that's all", "nothing", "nope", "no i'm all set", "done"
+        ]
+
+        # FIX: Accept more flexible negative responses using "in" logic, not just exact match
+        if any(resp in normalized_input for resp in negative_responses):
+            # Retrieve practitioner from session if available
+            practitioner_id = SessionManager.get(
+                session_id, "practitioner_id", None)
+            if practitioner_id and practitioner_id in PRACTITIONERS:
+                practitioner = PRACTITIONERS[practitioner_id]
+                practitioner_name = f"{practitioner['first_name']} {practitioner['last_name']}"
+            else:
+                practitioner_name = "Your Practitioner"
+            goodbye_text = (
+                f"Perfect! You're all set, {first_name}! 😊\n\n"
+                f"{practitioner_name} will see you for your telehealth appointment {appointment_date} at {appointment_time}.\n"
+                f"Your confirmation number is {confirmation_number}.\n\n"
+                "Have a wonderful day! 👋"
+            )
+            return {
+                "fulfillmentText": goodbye_text,
+                "outputContexts": []
+            }
+
+        # Default response if not "no"
+        response = {
+            "fulfillmentText": "Is there anything else I can help you with?",
+            "fulfillmentMessages": [
+                {
+                    "text": {
+                        "text": ["Is there anything else I can help you with?"]
+                    }
+                },
+                {
+                    "payload": {
+                        "richContent": [[
+                            {
+                                "type": "chips",
+                                "options": [
+                                    {"text": "No, I'm all set"},
+                                    {"text": "Schedule another"}
+                                ]
+                            }
+                        ]]
+                    }
+                }
+            ]
+        }
+        return response
+
+    except Exception as e:
+        logger.exception("Error in appointment_complete_response_handler")
+        return build_response("Thank you! Have a great day!")
+
+
+# --------------------
+# EXISTING PATIENT HANDLERS
+# --------------------
+
+def existing_patient_handler(session_id: str, req: Dict) -> Dict:
+    """Start flow for existing patient: prompt for full name."""
+    SessionManager.set(session_id, "patient_type", "existing")
+    text = (
+        "Welcome back! 👋\n\n"
+        "To help you schedule your appointment, could you please tell me your full name?"
+    )
+    return build_response(
+        text,
+        output_contexts=[
+            create_context(get_session_path(
+                req), "collect_existing_patient_name", lifespan=5),
+            create_context(get_session_path(
+                req), "awaiting_patient_type", lifespan=0)  # clear if present
+        ]
+    )
+
+
+def collect_existing_patient_name_handler(session_id: str, req: Dict) -> Dict:
+    """Collect and validate full name, then ask for practitioner."""
+    user_input = req.get("queryResult", {}).get("queryText", "").strip()
+    name_parts = user_input.split()
+    if len(name_parts) < 2:
+        return build_response(
+            "I need both your first and last name to look up your records. "
+            "Could you please provide your full name?",
+            output_contexts=[
+                create_context(get_session_path(
+                    req), "collect_existing_patient_name", lifespan=5)
+            ]
+        )
+    first_name = name_parts[0].title()
+    last_name = " ".join(name_parts[1:]).title()
+    full_name = f"{first_name} {last_name}"
+    SessionManager.set(session_id, "patient_name", full_name)
+    SessionManager.set(session_id, "first_name", first_name)
+    SessionManager.set(session_id, "last_name", last_name)
+    text = f"Thank you, {first_name}! Can you tell me who your current practitioner is?"
+    practitioner_names = [
+        f" {p['first_name']} {p['last_name']}" for p in PRACTITIONERS.values()]
+    return build_response(
+        text,
+        # suggestions=practitioner_names,
+        output_contexts=[
+            create_context(get_session_path(
+                req), "collect_existing_patient_name", lifespan=0),
+            create_context(get_session_path(req), "collect_existing_patient_practitioner", lifespan=5, parameters={
+                "patient_name": full_name,
+                "first_name": first_name,
+                "last_name": last_name
+            })
+        ]
+    )
+
+
+def collect_existing_patient_practitioner_handler(session_id: str, req: Dict) -> Dict:
+    """Collect and validate practitioner, then ask for appointment slots."""
+    user_input = req.get("queryResult", {}).get(
+        "queryText", "").strip().lower()
+    params = get_context_parameters(
+        req, 'collect_existing_patient_practitioner')
+    patient_name = params.get('patient_name', '')
+    first_name = params.get('first_name', '')
+
+    matched_practitioner = None
+    for practitioner_id, practitioner in PRACTITIONERS.items():
+        # Prepare all relevant name forms, all lowercased
+        practitioner_first = practitioner['first_name'].strip().lower()
+        practitioner_last = practitioner['last_name'].strip().lower()
+        practitioner_full = f"{practitioner_first} {practitioner_last}"
+        practitioner_full_name = practitioner['full_name'].strip().lower()
+        practitioner_key = practitioner_id.strip().lower()
+        # Check against all
+        if (
+            practitioner_first in user_input
+            or practitioner_last in user_input
+            or practitioner_full in user_input
+            or practitioner_full_name in user_input
+            or practitioner_key in user_input
+            or user_input in practitioner_full
+            or user_input in practitioner_full_name
+        ):
+            matched_practitioner = practitioner_id
+            break
+
+    if not matched_practitioner:
+        practitioners_list = [
+            f"• {p['first_name']} {p['last_name']}, PMHNP-BC" for p in PRACTITIONERS.values()
+        ]
+        return build_response(
+            "I couldn't find that provider in our system. "
+            "Here are our available practitioners:\n\n" + "\n".join(practitioners_list) +
+            "\n\nWhich provider would you like to see?",
+            suggestions=[
+                f"• {p['first_name']} {p['last_name']}, PMHNP-BC" for p in PRACTITIONERS.values()
+            ],
+            output_contexts=[
+                create_context(get_session_path(
+                    req), "collect_existing_patient_practitioner", lifespan=5, parameters=params)
+            ]
+        )
+
+    # Store practitioner info
+    SessionManager.set(session_id, "practitioner_id", matched_practitioner)
+    practitioner = PRACTITIONERS[matched_practitioner]
+    slots = generate_appointment_slots()
+    SessionManager.set(session_id, "appointment_slots", slots)
+    slot_text = ""
+    for i, slot in enumerate(slots[:4], 1):
+        slot_text += f"• {i}. {slot['date']} at {slot['time']}\n"
+    text = (
+        f"Great! Scheduling you with {practitioner['first_name']} {practitioner['last_name']}, PMHNP-BC.\n\n"
+        f"Here are the next available slots:\n\n{slot_text}\n"
+        "Please type the number of your preferred slot (1-4) or tell me another time that works for you."
+    )
+    return build_response(
+        text,
+        suggestions=["1", "2", "3", "4", "Different Times"],
+        output_contexts=[
+            create_context(get_session_path(
+                req), "collect_existing_patient_practitioner", lifespan=0),
+            create_context(get_session_path(req), "select_existing_patient_slot", lifespan=5, parameters={
+                "slots": slots[:4],
+                "patient_name": patient_name,
+                "practitioner_id": matched_practitioner
+            })
+        ]
+    )
+
+
+def select_existing_patient_slot_handler(session_id: str, req: Dict) -> Dict:
+    """Handle slot selection and prompt for phone number."""
+    # Extract number from either parameters or raw queryText
+    slot_number = 0
+    parameters = req.get('queryResult', {}).get('parameters', {})
+    if 'number' in parameters and parameters['number']:
+        try:
+            slot_number = int(parameters['number'])
+        except Exception:
+            slot_number = 0
+    else:
+        # Fallback: try to parse directly from text
+        user_input = req.get("queryResult", {}).get("queryText", "").strip()
+        if user_input.isdigit():
+            slot_number = int(user_input)
+
+    params = get_context_parameters(req, 'select_existing_patient_slot')
+    slots = params.get('slots', [])
+    patient_name = params.get('patient_name', '')
+    if not patient_name:
+        first_name = SessionManager.get(session_id, "first_name", "")
+        last_name = SessionManager.get(session_id, "last_name", "")
+        patient_name = f"{first_name} {last_name}".strip()
+
+    if not (1 <= slot_number <= len(slots)):
+        return build_response(
+            f"Please select a number between 1 and {len(slots)}.",
+            output_contexts=[
+                create_context(get_session_path(
+                    req), "select_existing_patient_slot", lifespan=5, parameters=params)
+            ]
+        )
+    selected_slot = slots[slot_number - 1]
+    SessionManager.set(session_id, "appointment_date", selected_slot['date'])
+    SessionManager.set(session_id, "appointment_time", selected_slot['time'])
+    first_name = patient_name.split()[0] if patient_name else "there"
+    # text = (
+    #     f"Perfect! I have you scheduled for:\n"
+    #     f"📅 {selected_slot['date']}.\n"
+    #     f"⏰ {selected_slot['time']}.\n\n"
+    #     f"What's the best number to reach you for appointment reminders?"
+    # )
+
+    text = (
+        f"Perfect! I have you scheduled for: 📅 {selected_slot['date']} at ⏰ {selected_slot['time']}."
+        " What's the best number to reach you for appointment reminders?"
+    )
+
+    return build_response(
+        text,
+        output_contexts=[
+            create_context(get_session_path(
+                req), "select_existing_patient_slot", lifespan=0),
+            create_context(get_session_path(req), "collect_existing_phone_final", lifespan=5, parameters={
+                "appointment_date": selected_slot['date'],
+                "appointment_time": selected_slot['time'],
+                "patient_name": patient_name
+            })
+        ]
+    )
+
+
+def collect_existing_phone_final_handler(session_id: str, req: Dict) -> Dict:
+    """Collect and validate phone, then confirm appointment and ask if anything else."""
+    phone_input = req['queryResult']['queryText'].strip()
+    params = get_context_parameters(req, 'collect_existing_phone_final')
+    patient_name = params.get('patient_name', '')
+    appointment_date = params.get('appointment_date', '')
+    appointment_time = params.get('appointment_time', '')
+    phone_digits = re.sub(r'\D', '', phone_input)
+    if phone_digits.startswith('1') and len(phone_digits) == 11:
+        phone_digits = phone_digits[1:]
+    if len(phone_digits) != 10:
+        return build_response(
+            "Please provide a valid 10-digit phone number (like 402-956-3584).",
+            output_contexts=[
+                create_context(get_session_path(
+                    req), "collect_existing_phone_final", lifespan=5, parameters=params)
+            ]
+        )
+    formatted_phone = f"({phone_digits[:3]}) {phone_digits[3:6]}-{phone_digits[6:]}"
+    SessionManager.set(session_id, "phone_number", formatted_phone)
+    first_name = patient_name.split()[0] if patient_name else "there"
+    confirmation_number = generate_confirmation_number()
+    SessionManager.set(session_id, "confirmation_number", confirmation_number)
+    # Get practitioner name from session or context
+    practitioner_id = SessionManager.get(session_id, "practitioner_id", None)
+    practitioner_name = ""
+    if practitioner_id and practitioner_id in PRACTITIONERS:
+        practitioner = PRACTITIONERS[practitioner_id]
+        practitioner_name = f"{practitioner['first_name']} {practitioner['last_name']}, PMHNP-BC"
+    else:
+        practitioner_name = "Your Provider"
+
+    # IF CLIENT USES MARKDOWN
+    confirmation_text = (
+        "Perfect! Your telehealth appointment is confirmed! 🎉📋\n\n"
+        f" - Appointment Details:\n\n"
+        f" - Patient: {patient_name}\n\n"
+
+        f" - Practitioner: {practitioner_name}\n\n"
+
+        f" - Date: {appointment_date}\n\n"
+
+        f" - Time: {appointment_time}\n\n"
+
+        f" - Phone: {formatted_phone}\n\n"
+
+        f" - Confirmation #: {confirmation_number}\n\n\n"
+
+        "You'll receive a text message reminder 24 hours before your appointment.\n\n"
+        f"Is there anything else I can help you with today, {first_name}?"
+    )
+
+    return build_response(
+        confirmation_text,
+        output_contexts=[
+            create_context(get_session_path(
+                req), "collect_existing_phone_final", lifespan=0),
+            create_context(get_session_path(req), "appointment_complete_response", lifespan=5, parameters={
+                "confirmation_number": confirmation_number,
+                "appointment_date": appointment_date,
+                "appointment_time": appointment_time,
+                "patient_name": patient_name
+            })
+        ],
+        # suggestions=[
+        #     "I'm all set\n\n",
+        #     "Prescription",
+        #     "Insurance",
+        #     "Billing",
+        #     "Contact Provider",
+        #     "General Info"
+        # ]
+    )
+
 
 # ============================================================================
 # PRESCRIPTION HANDLERS
@@ -814,11 +1408,32 @@ INTENT_HANDLERS = {
     "greeting": welcome_handler,
     "start": welcome_handler,
     "appointment_entry": appointment_entry_handler,
+
     "new_patient_handler": new_patient_handler,
     "collect_new_patient_name": collect_new_patient_name_handler,
     "collect_new_patient_state": collect_new_patient_state_handler,
     "collect_new_patient_insurance": collect_new_patient_insurance_handler,
     "select_new_visit_type": select_new_visit_type_handler,
+
+    "phone_consultation": phone_consultation_handler,
+    "collect_phone_consultation": collect_phone_consultation_handler,
+
+    "initial_assessment_handler": initial_assessment_handler,
+    "select_appointment_slot_handler": select_appointment_slot_handler,
+    "collect_assessment_phone_final_handler": collect_assessmentphone_final_handler,
+    "appointment_complete_response_handler": appointment_complete_response_handler,
+
+    "existing_patient_handler": existing_patient_handler,
+    "collect_existing_patient_name": collect_existing_patient_name_handler,
+    "collect_existing_patient_practitioner": collect_existing_patient_practitioner_handler,
+    "select_existing_patient_slot": select_existing_patient_slot_handler,
+    "collect_existing_phone_final": collect_existing_phone_final_handler,
+
+
+
+
+    "select_time": select_appointment_slot_handler,
+    "confirm_appointment": appointment_complete_response_handler,
 
     "prescription_entry": prescription_entry_handler,
 
@@ -827,9 +1442,6 @@ INTENT_HANDLERS = {
     "practitioner_message_entry": practitioner_message_entry_handler,
     "general_information": general_information_handler,
 
-    "collect_new_patient_state": collect_new_patient_state_handler,
-    "collect_new_patient_insurance": collect_new_patient_insurance_handler,
-    "select_new_visit_type": select_new_visit_type_handler,
     # [Add the rest of your mapping here for all handlers above]
 }
 
@@ -852,9 +1464,45 @@ def process_message(request_data: dict) -> dict:
     for context in contexts:
         context_name = context['name'].split('/')[-1]
         # [Include your original context-based routing here, but always fallback to a guiding question]
-        # e.g., appointment_complete, collect_phone_final, etc.
+        # e.g., appointment_complete, collect_assessment_phone_final, etc.
 
-    # Intent routing
+
+# Regular intent routing
+    if intent_name == "schedule_appointment":
+        return appointment_entry_handler(session_id, request_data)
+
+# NEW PATIENT intent routing
+
+    elif intent_name == "new_patient":
+        return new_patient_handler(session_id, request_data)
+
+    elif intent_name == "collect_new_patient_name":
+        return collect_new_patient_name_handler(session_id, request_data)
+
+    elif intent_name == "collect_state":
+        return collect_new_patient_state_handler(session_id, request_data)
+
+    elif intent_name == "collect_insurance":
+        return collect_new_patient_insurance_handler(session_id, request_data)
+
+    elif intent_name == "select_new_visit_type":
+        return select_new_visit_type_handler(session_id, request_data)
+
+# EXISTING PATIENT intent routing
+
+    elif intent_name == "existing_patient":
+        return existing_patient_handler(session_id, request_data)
+
+    elif intent_name == "select_time":
+        return select_appointment_slot_handler(session_id, request_data)
+
+    elif intent_name == "confirm_appointment":
+        return appointment_complete_response_handler(session_id, request_data)
+
+    elif intent_name == "collect_phone":
+        return collect_existing_phone_final_handler(session_id, request_data)
+
+        # Intent routing
     handler = INTENT_HANDLERS.get(intent_name, fallback_handler)
     return handler(session_id, request_data)
 
