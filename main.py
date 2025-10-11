@@ -1502,44 +1502,108 @@ def process_message(request_data: dict) -> dict:
                        "No longer need appointment"]
         return build_response(text, suggestions)
 
-    # Regular intent routing
-    if intent_name == "schedule_appointment":
-        return appointment_entry_handler(session_id, request_data)
-
-    elif intent_name == "new_patient":
-        return new_patient_handler(session_id, request_data)
-
-    elif intent_name == "existing_patient":
-        return existing_patient_handler(session_id, request_data)
-
-    elif intent_name == "collect_state":
-        return collect_new_patient_state_handler(session_id, request_data)
-
-    elif intent_name == "collect_insurance":
-        return collect_new_patient_insurance_handler(session_id, request_data)
-
-    elif intent_name == "select_new_visit_type":
-        return select_new_visit_type_handler(session_id, request_data)
-
-    elif intent_name == "select_time":
-        return select_appointment_slot_handler(session_id, request_data)
-
-    elif intent_name == "confirm_appointment":
-        return appointment_complete_response_handler(session_id, request_data)
-
-    elif intent_name == "collect_phone":
-        return collect_assessment_phone_final_handler(session_id, request_data)
 
 # ============================================================================
 # FALLBACK
 # ============================================================================
 
 
+# def fallback_handler(session_id: str, req: Dict) -> Dict:
+#     query_text = req.get("queryResult", {}).get("queryText", "").lower()
+#     contexts = req.get("queryResult", {}).get("outputContexts", [])
+#     context_names = [ctx['name'].split('/')[-1] for ctx in contexts]
+#     # Fallback with suggestions and gentle guidance
+#     text = (
+#         "I'm here to help! You can:\n\n"
+#         "• Schedule an appointment\n"
+#         "• Ask about prescriptions\n"
+#         "• Check insurance coverage\n"
+#         "• Get billing information\n"
+#         "• Leave a message for your practitioner\n\n"
+#         "What would you like to do?"
+#     )
+#     suggestions = ["Book Appointment", "Prescriptions",
+#                    "Insurance", "Contact Provider"]
+#     return build_response(text, suggestions)
+
 def fallback_handler(session_id: str, req: Dict) -> Dict:
+    """Enhanced fallback handler with context awareness"""
     query_text = req.get("queryResult", {}).get("queryText", "").lower()
     contexts = req.get("queryResult", {}).get("outputContexts", [])
+    user_input = query_text  # Define user_input for use below
+
+    # Extract intent name from request
+    intent_name = req.get("queryResult", {}).get(
+        "intent", {}).get("displayName", "")
+
+    # Extract context names
     context_names = [ctx['name'].split('/')[-1] for ctx in contexts]
-    # Fallback with suggestions and gentle guidance
+
+    # Regular intent routing
+    if intent_name == "schedule_appointment":
+        return appointment_entry_handler(session_id, req)
+
+    elif intent_name == "new_patient":
+        return new_patient_handler(session_id, req)
+
+    elif intent_name == "existing_patient":
+        return existing_patient_handler(session_id, req)
+
+    elif intent_name == "collect_state":
+        return collect_new_patient_state_handler(session_id, req)
+
+    elif intent_name == "collect_insurance":
+        return collect_new_patient_insurance_handler(session_id, req)
+
+    elif intent_name == "select_new_visit_type":
+        return select_new_visit_type_handler(session_id, req)
+
+    elif intent_name == "select_time":
+        return select_appointment_slot_handler(session_id, req)
+
+    elif intent_name == "confirm_appointment":
+        return appointment_complete_response_handler(session_id, req)
+
+    elif intent_name == "collect_assessment_phone_final":
+        return collect_assessment_phone_final_handler(session_id, req)
+
+    # Check for common intents
+    if any(word in query_text for word in ["appointment", "appointments", "schedule", "scheduling", "book", "booking"]):
+        return appointment_entry_handler(session_id, req)
+
+    elif intent_name == "collect_phone_consultation":
+        return collect_phone_consultation_handler(session_id, req)
+
+    elif intent_name == "collect_existing_phone_final":
+        return collect_existing_phone_final_handler(session_id, req)
+
+    elif any(word in query_text for word in ["prescription", "prescriptions", "medication", "refill"]):
+        return prescription_entry_handler(session_id, req)
+
+    elif any(word in query_text for word in ["insurance", "coverage"]):
+        return insurance_entry_handler(session_id, req)
+
+    elif any(word in query_text for word in ["bill", "payment", "pay"]):
+        return billing_entry_handler(session_id, req)
+
+    elif any(word in query_text for word in ["practitioner", "provider", "doctor", ]):
+        return practitioner_message_entry_handler(session_id, req)
+
+    elif any(word in query_text for word in ["general", "information", "question", "general question", "info"]):
+        return general_information_handler(session_id, req)
+
+    elif any(word in query_text for word in ["bye", "goodbye", "thanks", "thank you"]):
+        return appointment_complete_response_handler(session_id, req, user_input)
+
+    # Context-specific fallbacks
+    elif "collect_new_patient_state" in context_names:
+        return collect_new_patient_state_handler(session_id, req)
+    elif "collect_new_patient_insurance" in context_names:
+        return collect_new_patient_insurance_handler(session_id, req)
+    elif "select_appointment_slot" in context_names:
+        return select_appointment_slot_handler(session_id, req)
+
+    # Default fallback
     text = (
         "I'm here to help! You can:\n\n"
         "• Schedule an appointment\n"
@@ -1549,8 +1613,10 @@ def fallback_handler(session_id: str, req: Dict) -> Dict:
         "• Leave a message for your practitioner\n\n"
         "What would you like to do?"
     )
+
     suggestions = ["Book Appointment", "Prescriptions",
                    "Insurance", "Contact Provider"]
+
     return build_response(text, suggestions)
 
 # ============================================================================
