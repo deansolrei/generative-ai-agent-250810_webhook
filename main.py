@@ -1,6 +1,11 @@
 # ============================================================================
-# TOP-LEVELCODE
+# TOP-LEVEL IMPORTS & GLOBALS
 # ============================================================================
+import os
+from flask import Flask, request, jsonify
+import string
+import threading
+import logging
 from typing import Dict
 from google.oauth2.service_account import Credentials
 import gspread
@@ -9,11 +14,8 @@ import random
 from typing import Dict, List, Any, Optional
 import re
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify
-import string
-import threading
-import logging
-import os
+
+
 from difflib import SequenceMatcher
 
 app = Flask(__name__)
@@ -268,10 +270,10 @@ def generate_confirmation_number() -> str:
     random_suffix = random.randint(100, 999)
     return f"SBH{timestamp[-6:]}{random_suffix}"
 
+
 # ============================================================================
 # RESPONSE BUILDERS
 # ============================================================================
-
 
 def build_response(
     text: str,
@@ -329,10 +331,10 @@ def intent_handler_wrapper(handler):
         return handler(session_id, req, user_input)
     return wrapped
 
+
 # ============================================================================
 # MAIN HANDLER FUNCTIONS
 # ============================================================================
-
 
 def welcome_handler(session_id: str, req: Dict) -> Dict:
     SessionManager.clear(session_id)
@@ -438,9 +440,15 @@ def collect_new_patient_name_handler(session_id: str, req: Dict) -> Dict:
     return build_response(
         f"Thank you, {first_name}! I would like to collect some information so we can get an appointment scheduled for you.\nFirst, what state do you live in?",
         output_contexts=[
+            # Clear previous context
             create_context(
                 get_session_path(req),
-                "collect_new_patient_state",
+                "collect_new_patient_name",
+                lifespan=0
+            ),
+            create_context(
+                get_session_path(req),
+                "collect_new_patient_state",  # ← Go to state collection
                 lifespan=5,
                 parameters={
                     "first_name": first_name,
@@ -449,14 +457,110 @@ def collect_new_patient_name_handler(session_id: str, req: Dict) -> Dict:
                     "patient_type": "new",
                     "flow": "appointment"
                 }
-            ),
-            create_context(
-                get_session_path(req),
-                "collect_new_patient_name",
-                lifespan=0
             )
         ]
     )
+
+
+# def collect_new_patient_state_handler(session_id: str, req: Dict) -> Dict:
+#     """
+#     Handle state collection and verify licensing; uses first name for conversational flow.
+#     """
+#     state_input = req.get("queryResult", {}).get("queryText", "").strip()
+#     params = get_context_parameters(req, 'collect_new_patient_state')
+#     patient_name = params.get('patient_name', '')
+#     first_name = params.get('first_name', '')
+
+#     if not patient_name or not first_name:
+#         first_name = SessionManager.get(session_id, "first_name", "")
+#         last_name = SessionManager.get(session_id, "last_name", "")
+#         patient_name = f"{first_name} {last_name}".strip()
+
+#     # Normalize state input
+#         state = state_input.lower()
+#         state_abbr = LICENSED_STATES.get(state, state.upper())
+#         practitioners_available = get_practitioners_in_state(state_abbr)
+
+#     def get_practitioners_in_state(state_abbr: str) -> list:
+#         """
+#         Returns a list of practitioners licensed in the given state abbreviation.
+#         """
+#         return [
+#             practitioner for practitioner in PRACTITIONERS.values()
+#             if state_abbr in practitioner.get("states", [])
+#         ]
+
+#     if practitioners_available:
+#         SessionManager.set(session_id, "patient_state", state_abbr)
+#         text = (
+#             f"Great news, {first_name}! We have {len(practitioners_available)} practitioner(s) "
+#             f"licensed in {state_abbr}. 🎉\n\n"
+#             "Next, I'll need information about your insurance. Could you tell me who your insurance carrier is?"
+#         )
+#         suggestions = ["Aetna", "Cigna",
+#                        "United Healthcare", "BCBS", "Self-Pay", "Other"]
+#         return build_response(
+#             text,
+#             suggestions=suggestions,
+#             output_contexts=[
+#                 create_context(
+#                     get_session_path(req),
+#                     "collect_new_patient_insurance",
+#                     lifespan=5,
+#                     parameters={
+#                         "patient_name": patient_name,
+#                         "patient_state": state_abbr,
+#                         "patient_type": "new"
+#                     }
+#                 ),
+#                 create_context(
+#                     get_session_path(req),
+#                     "collect_new_patient_state",
+#                     lifespan=0
+#                 )
+#             ]
+#         )
+#     else:
+#         # Handle no practitioners case
+#         text = (
+#             f"I'm sorry, {first_name}, but we don't currently have practitioners licensed in {state_input}. "
+#             "We're expanding to new states regularly.\n\n"
+#             "Would you like to try another state?"
+#         )
+#         return build_response(
+#             text,
+#             suggestions=["Try Another State", "Join Waitlist"],
+#             output_contexts=[
+#                 create_context(
+#                     get_session_path(req),
+#                     "handle_no_practitioners_state",
+#                     lifespan=5,
+#                     parameters={
+#                         "patient_name": patient_name,
+#                         "attempted_state": state_input
+#                     }
+#                 ),
+#                 create_context(
+#                     get_session_path(req),
+#                     "collect_new_patient_state",
+#                     lifespan=0
+#                 )
+#             ]
+#         )
+
+
+# Fix for collect_new_patient_state_handler loop and context handling
+
+# Replace your collect_new_patient_state_handler with the following:
+
+def get_practitioners_in_state(state_abbr: str) -> list:
+    """
+    Returns a list of practitioners licensed in the given state abbreviation.
+    """
+    return [
+        practitioner for practitioner in PRACTITIONERS.values()
+        if state_abbr in practitioner.get("states", [])
+    ]
 
 
 def collect_new_patient_state_handler(session_id: str, req: Dict) -> Dict:
@@ -474,18 +578,10 @@ def collect_new_patient_state_handler(session_id: str, req: Dict) -> Dict:
         patient_name = f"{first_name} {last_name}".strip()
 
     # Normalize state input
-        state = state_input.lower()
-        state_abbr = LICENSED_STATES.get(state, state.upper())
-        practitioners_available = get_practitioners_in_state(state_abbr)
-
-    def get_practitioners_in_state(state_abbr: str) -> list:
-        """
-        Returns a list of practitioners licensed in the given state abbreviation.
-        """
-        return [
-            practitioner for practitioner in PRACTITIONERS.values()
-            if state_abbr in practitioner.get("states", [])
-        ]
+    state_key = state_input.lower().strip()
+    # Try to get both full state name and abbreviation
+    state_abbr = LICENSED_STATES.get(state_key, state_key.upper())
+    practitioners_available = get_practitioners_in_state(state_abbr)
 
     if practitioners_available:
         SessionManager.set(session_id, "patient_state", state_abbr)
@@ -510,6 +606,7 @@ def collect_new_patient_state_handler(session_id: str, req: Dict) -> Dict:
                         "patient_type": "new"
                     }
                 ),
+                # Explicitly clear collect_new_patient_state context to break the loop:
                 create_context(
                     get_session_path(req),
                     "collect_new_patient_state",
@@ -537,6 +634,7 @@ def collect_new_patient_state_handler(session_id: str, req: Dict) -> Dict:
                         "attempted_state": state_input
                     }
                 ),
+                # Clear collect_new_patient_state context to prevent looping
                 create_context(
                     get_session_path(req),
                     "collect_new_patient_state",
@@ -544,6 +642,14 @@ def collect_new_patient_state_handler(session_id: str, req: Dict) -> Dict:
                 )
             ]
         )
+
+# How does this fix the loop?
+# - Always sets lifespan=0 for "collect_new_patient_state" context after handling, so Dialogflow won't keep sending the same context.
+# - If the state is valid, the next context is "collect_new_patient_insurance".
+# - If not valid, the next context is "handle_no_practitioners_state", but "collect_new_patient_state" is cleared.
+# - This ensures you break out of the loop and move to the next step or offer alternatives.
+
+# Be sure to remove the previous get_practitioners_in_state function definition if you had it inside collect_new_patient_state_handler.
 
 
 def collect_new_patient_insurance_handler(session_id: str, req: Dict) -> Dict:
@@ -749,18 +855,23 @@ def collect_phone_consultation_handler(session_id: str, req: Dict) -> Dict:
     # Clear consultation context and set general help context
     return build_response(
         text,
-        output_contexts=[create_context(
-            get_session_path(req),
-            "appointment_complete_response",
-            lifespan=5,
-            parameters={
-                "patient_name": patient_name,
-                "consultation_phone": formatted_phone,
-                "previous_action": "phone_consultation"
-            }
-        )],
-        suggestions=["Book an appointment",
-                     "Questions about services", "No, that's all"]
+        output_contexts=[
+            create_context(
+                get_session_path(req),
+                "appointment_complete_response",
+                lifespan=5,
+                parameters={
+                    "patient_name": patient_name,
+                    "consultation_phone": formatted_phone,
+                    "previous_action": "phone_consultation"
+                }
+            ),
+            create_context(
+                get_session_path(req),
+                "collect_phone_consultation",
+                lifespan=0
+            )
+        ]
     )
 
 # -----------------------
@@ -788,11 +899,11 @@ def initial_assessment_handler(session_id: str, req: Dict) -> Dict:
         "Let me check what available times and dates we may have available "
         "so we can schedule your initial assessment. 🗓️\n\n"
         f"Here are our next available slots: \n\n{slot_text}"
-        "Please type the number of your preferred slot (1-6) "
+        "Please type the number of your preferred slot (1-4) "
         "or you can tell me when you'd like to schedule the telehealth visit."
     )
 
-    suggestions = ["1", "2", "3", "4", "5", "6", "Different Times"]
+    suggestions = ["1", "2", "3", "4", "Different Times"]
 
     context = create_context(
         get_session_path(req),
@@ -871,7 +982,15 @@ def select_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
             create_context(get_session_path(
                 req), "select_appointment_slot", lifespan=0),
             create_context(get_session_path(
+                req), "initial_assessment", lifespan=0),
+            create_context(get_session_path(
                 req), "select_new_visit_type", lifespan=0),
+            create_context(get_session_path(
+                req), "collect_new_patient_name", lifespan=0),
+            create_context(get_session_path(
+                req), "collect_new_patient_state", lifespan=0),
+            create_context(get_session_path(
+                req), "collect_new_patient_phone", lifespan=0),
             create_context(get_session_path(
                 req), "collect_new_patient_insurance", lifespan=0)
         ]
@@ -1233,6 +1352,17 @@ def select_existing_patient_slot_handler(session_id: str, req: Dict) -> Dict:
     )
 
 
+def cancellation_request_handler(session_id: str, req: Dict) -> Dict:
+    """Handles appointment cancellation requests."""
+    text = (
+        "We're sorry to hear you'd like to cancel your appointment. "
+        "To proceed, please call our office at "
+        f"{CLINIC_INFO['phone']} or reply here with your reason for cancellation."
+    )
+    suggestions = ["Call Office", "Reschedule", "No longer need appointment"]
+    return build_response(text, suggestions)
+
+
 def collect_existing_phone_final_handler(session_id: str, req: Dict) -> Dict:
     """Collect and validate phone, then confirm appointment and ask if anything else."""
     phone_input = req['queryResult']['queryText'].strip()
@@ -1379,10 +1509,10 @@ def practitioner_message_entry_handler(session_id: str, req: Dict) -> Dict:
     practitioner_names = [p["first_name"] for p in PRACTITIONERS.values()]
     return build_response(text, practitioner_names, cards=practitioner_cards)
 
-# ============================================================================
-# GENERAL INFO FLOW
-# ============================================================================
 
+# ============================================================================
+# GENERAL INFO HANDLERS
+# ============================================================================
 
 def general_information_handler(session_id: str, req: Dict) -> Dict:
     text = (
@@ -1399,8 +1529,15 @@ def general_information_handler(session_id: str, req: Dict) -> Dict:
     return build_response(text, suggestions)
 
 
+def intent_handler_with_user_input(handler):
+    def wrapped(session_id, req):
+        user_input = req.get('queryResult', {}).get('queryText', '')
+        return handler(session_id, req, user_input)
+    return wrapped
+
+
 # ============================================================================
-# INTENT HANDLERS MAPPING
+# INTENT HANDLER MAPPING
 # ============================================================================
 INTENT_HANDLERS = {
     "Default Welcome Intent": welcome_handler,
@@ -1421,17 +1558,16 @@ INTENT_HANDLERS = {
     "initial_assessment": initial_assessment_handler,
     "select_appointment_slot": select_appointment_slot_handler,
     "collect_assessment_phone_final": collect_assessment_phone_final_handler,
-    "appointment_complete_response": appointment_complete_response_handler,
+    "appointment_complete_response": intent_handler_with_user_input(appointment_complete_response_handler),
 
     "existing_patient_handler": existing_patient_handler,
     "collect_existing_patient_name": collect_existing_patient_name_handler,
     "collect_existing_patient_practitioner": collect_existing_patient_practitioner_handler,
     "select_existing_patient_slot": select_existing_patient_slot_handler,
     "collect_existing_phone_final": collect_existing_phone_final_handler,
-
-
     "select_time": select_appointment_slot_handler,
-    "confirm_appointment": appointment_complete_response_handler,
+    "confirm_appointment": intent_handler_with_user_input(appointment_complete_response_handler),
+    # ... rest unchanged
 
     "prescription_entry": prescription_entry_handler,
 
@@ -1444,7 +1580,7 @@ INTENT_HANDLERS = {
 }
 
 # ============================================================================
-# MAIN WEBHOOK HANDLER
+# MAIN WEBHOOK ROUTER
 # ============================================================================
 
 
@@ -1467,64 +1603,26 @@ def process_message(request_data: dict) -> dict:
 
     for context in contexts:
         context_name = context['name'].split('/')[-1]
-
-        # After appointment is complete
-        if context_name == "appointment_complete":
+        if context_name in ["appointment_complete", "appointment_complete_response"]:
             if user_input in ["no", "no thanks", "i'm good", "i'm all set", "all set",
                               "that's all", "nothing", "nope", "no, i'm all set"]:
-                return appointment_complete_response_handler(session_id, request_data)
+                return appointment_complete_response_handler(session_id, request_data, user_input)
             elif user_input in ["yes", "schedule another", "another appointment"]:
                 return appointment_entry_handler(session_id, request_data)
             elif "cancel" in user_input:
                 return cancellation_request_handler(session_id, request_data)
+            else:
+                return appointment_complete_response_handler(session_id, request_data, user_input)
+            # Add other context handlers here...
 
-        # Phone collection
-        elif context_name == "collect_assessment_phone_final":
-            import re
-            phone_digits = re.sub(r'\D', '', user_input)
-            if len(phone_digits) >= 10:
-                logger.info(f"Phone number detected: {user_input}")
-                return collect_assessment_phone_final_handler(session_id, request_data)
-
-        # Add other context handlers here...
-
-    # ============================================================================
-    # CANCELLATION HANDLER
-    # ============================================================================
-    def cancellation_request_handler(session_id: str, req: Dict) -> Dict:
-        """Handles appointment cancellation requests."""
-        text = (
-            "We're sorry to hear you'd like to cancel your appointment. "
-            "To proceed, please call our office at "
-            f"{CLINIC_INFO['phone']} or reply here with your reason for cancellation."
-        )
-        suggestions = ["Call Office", "Reschedule",
-                       "No longer need appointment"]
-        return build_response(text, suggestions)
+    # === If no context routing matches, route by intent ===
+    handler = INTENT_HANDLERS.get(intent_name, fallback_handler)
+    return handler(session_id, request_data)
 
 
 # ============================================================================
 # FALLBACK
 # ============================================================================
-
-
-# def fallback_handler(session_id: str, req: Dict) -> Dict:
-#     query_text = req.get("queryResult", {}).get("queryText", "").lower()
-#     contexts = req.get("queryResult", {}).get("outputContexts", [])
-#     context_names = [ctx['name'].split('/')[-1] for ctx in contexts]
-#     # Fallback with suggestions and gentle guidance
-#     text = (
-#         "I'm here to help! You can:\n\n"
-#         "• Schedule an appointment\n"
-#         "• Ask about prescriptions\n"
-#         "• Check insurance coverage\n"
-#         "• Get billing information\n"
-#         "• Leave a message for your practitioner\n\n"
-#         "What would you like to do?"
-#     )
-#     suggestions = ["Book Appointment", "Prescriptions",
-#                    "Insurance", "Contact Provider"]
-#     return build_response(text, suggestions)
 
 def fallback_handler(session_id: str, req: Dict) -> Dict:
     """Enhanced fallback handler with context awareness"""
@@ -1620,30 +1718,88 @@ def fallback_handler(session_id: str, req: Dict) -> Dict:
     return build_response(text, suggestions)
 
 # ============================================================================
-# WEBHOOK ENDPOINT
+# FLASK ENDPOINTS
 # ============================================================================
+
+
+# @app.route('/webhook', methods=['POST'])
+# def webhook():
+#     """Main webhook handler with enhanced error handling"""
+#     try:
+#         req = request.get_json()
+#         session_id = extract_session_id(req)
+#         intent_name = req.get('queryResult', {}).get(
+#             'intent', {}).get('displayName', '')
+#         query_text = req.get('queryResult', {}).get('queryText', '')
+
+#         logger.info(
+#             f"Session: {session_id}, Intent: {intent_name}, Query: {query_text}")
+
+#         # Route to appropriate handler
+#         handler = INTENT_HANDLERS.get(intent_name, fallback_handler)
+#         # response = handler(session_id, req)
+#         # Use context-based AND intent-based routing
+#         response = process_message(req)
+
+#         # Ensure response is valid
+#         if not isinstance(response, dict):
+#             logger.error(f"Invalid response from handler: {handler.__name__}")
+#             response = build_response(
+#                 "I encountered an error. Please try again.")
+
+#         return jsonify(response)
+
+#     except Exception as e:
+#         logger.exception("Webhook error")
+#         return jsonify(build_response(
+#             "I apologize, but I encountered an error. Please try again or call us at " +
+#             CLINIC_INFO['phone']
+#         )), 500
+
+# @app.route('/webhook', methods=['POST'])
+# def webhook():
+#     """Main webhook handler with enhanced error handling"""
+#     try:
+#         req = request.get_json()
+#         session_id = extract_session_id(req)
+#         intent_name = req.get('queryResult', {}).get(
+#             'intent', {}).get('displayName', '')
+#         query_text = req.get('queryResult', {}).get('queryText', '')
+
+#         logger.info(
+#             f"Session: {session_id}, Intent: {intent_name}, Query: {query_text}")
+
+#         # Use context-based AND intent-based routing
+#         response = process_message(req)
+
+#         # Ensure response is valid
+#         if not isinstance(response, dict):
+#             logger.error("Invalid response from handler")
+#             response = build_response(
+#                 "I encountered an error. Please try again.")
+
+#         return jsonify(response)
+
+#     except Exception as e:
+#         logger.exception("Webhook error")
+#         return jsonify(build_response(
+#             "I apologize, but I encountered an error. Please try again or call us at " +
+#             CLINIC_INFO['phone']
+#         )), 500
 
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Main webhook handler with enhanced error handling"""
     try:
-        req = request.get_json()
-        session_id = extract_session_id(req)
-        intent_name = req.get('queryResult', {}).get(
-            'intent', {}).get('displayName', '')
-        query_text = req.get('queryResult', {}).get('queryText', '')
-
-        logger.info(
-            f"Session: {session_id}, Intent: {intent_name}, Query: {query_text}")
-
-        # Route to appropriate handler
-        handler = INTENT_HANDLERS.get(intent_name, fallback_handler)
-        response = handler(session_id, req)
+        # Use force=True to handle json reliably
+        req = request.get_json(force=True)
+        # Use context-based AND intent-based routing via your unified process_message function
+        response = process_message(req)
 
         # Ensure response is valid
         if not isinstance(response, dict):
-            logger.error(f"Invalid response from handler: {handler.__name__}")
+            logger.error("Invalid response from handler")
             response = build_response(
                 "I encountered an error. Please try again.")
 
@@ -1656,10 +1812,10 @@ def webhook():
             CLINIC_INFO['phone']
         )), 500
 
+
 # ============================================================================
 # HEALTH & STATUS ENDPOINTS
 # ============================================================================
-
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -1713,7 +1869,7 @@ def internal_error(error):
 
 
 # ============================================================================
-# MAIN EXECUTION
+# MAIN EXECUTION BLOCK
 # ============================================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
