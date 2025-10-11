@@ -907,7 +907,7 @@ def initial_assessment_handler(session_id: str, req: Dict) -> Dict:
 
     context = create_context(
         get_session_path(req),
-        "select_appointment_slot",
+        "select_assessment_appointment_slot",
         parameters={
             "visit_type": "initial_assessment",
             "patient_name": patient_name,
@@ -918,7 +918,7 @@ def initial_assessment_handler(session_id: str, req: Dict) -> Dict:
     return build_response(text, suggestions, [context])
 
 
-def select_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
+def select_assessment_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
     """Handle appointment slot selection"""
 
     # Get the slot number and convert to int (CHANGED SECTION)
@@ -926,7 +926,7 @@ def select_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
     slot_number = int(slot_number_raw) if slot_number_raw else 0
 
     # Get slots and patient name from context (NO CHANGE)
-    params = get_context_parameters(req, 'select_appointment_slot')
+    params = get_context_parameters(req, 'select_assessment_appointment_slot')
     slots = params.get('slots', [])
     patient_name = params.get('patient_name', '')
 
@@ -942,7 +942,7 @@ def select_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
             f"Please select a number between 1 and {len(slots)}",
             output_contexts=[create_context(
                 get_session_path(req),
-                "select_appointment_slot",
+                "select_assessment_appointment_slot",
                 lifespan=5,
                 parameters=params
             )]
@@ -980,19 +980,19 @@ def select_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
             ),
             # Clear ALL old contexts explicitly
             create_context(get_session_path(
-                req), "select_appointment_slot", lifespan=0),
-            create_context(get_session_path(
-                req), "initial_assessment", lifespan=0),
-            create_context(get_session_path(
-                req), "select_new_visit_type", lifespan=0),
-            create_context(get_session_path(
-                req), "collect_new_patient_name", lifespan=0),
-            create_context(get_session_path(
-                req), "collect_new_patient_state", lifespan=0),
-            create_context(get_session_path(
-                req), "collect_new_patient_phone", lifespan=0),
-            create_context(get_session_path(
-                req), "collect_new_patient_insurance", lifespan=0)
+                req), "select_assessment_appointment_slot", lifespan=0),
+            # create_context(get_session_path(
+            #     req), "initial_assessment", lifespan=0),
+            # create_context(get_session_path(
+            #     req), "select_new_visit_type", lifespan=0),
+            # create_context(get_session_path(
+            #     req), "collect_new_patient_name", lifespan=0),
+            # create_context(get_session_path(
+            #     req), "collect_new_patient_state", lifespan=0),
+            # create_context(get_session_path(
+            #     req), "collect_new_patient_phone", lifespan=0),
+            # create_context(get_session_path(
+            #     req), "collect_new_patient_insurance", lifespan=0)
         ]
     )
 
@@ -1281,7 +1281,7 @@ def collect_existing_patient_practitioner_handler(session_id: str, req: Dict) ->
         output_contexts=[
             create_context(get_session_path(
                 req), "collect_existing_patient_practitioner", lifespan=0),
-            create_context(get_session_path(req), "select_existing_patient_slot", lifespan=5, parameters={
+            create_context(get_session_path(req), "select_existing_appointment_slot", lifespan=5, parameters={
                 "slots": slots[:4],
                 "patient_name": patient_name,
                 "practitioner_id": matched_practitioner
@@ -1290,7 +1290,7 @@ def collect_existing_patient_practitioner_handler(session_id: str, req: Dict) ->
     )
 
 
-def select_existing_patient_slot_handler(session_id: str, req: Dict) -> Dict:
+def select_existing_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
     """Handle slot selection and prompt for phone number."""
     # Extract number from either parameters or raw queryText
     slot_number = 0
@@ -1306,7 +1306,7 @@ def select_existing_patient_slot_handler(session_id: str, req: Dict) -> Dict:
         if user_input.isdigit():
             slot_number = int(user_input)
 
-    params = get_context_parameters(req, 'select_existing_patient_slot')
+    params = get_context_parameters(req, 'select_existing_appointment_slot')
     slots = params.get('slots', [])
     patient_name = params.get('patient_name', '')
     if not patient_name:
@@ -1319,19 +1319,13 @@ def select_existing_patient_slot_handler(session_id: str, req: Dict) -> Dict:
             f"Please select a number between 1 and {len(slots)}.",
             output_contexts=[
                 create_context(get_session_path(
-                    req), "select_existing_patient_slot", lifespan=5, parameters=params)
+                    req), "select_existing_appointment_slot", lifespan=5, parameters=params)
             ]
         )
     selected_slot = slots[slot_number - 1]
     SessionManager.set(session_id, "appointment_date", selected_slot['date'])
     SessionManager.set(session_id, "appointment_time", selected_slot['time'])
     first_name = patient_name.split()[0] if patient_name else "there"
-    # text = (
-    #     f"Perfect! I have you scheduled for:\n"
-    #     f"📅 {selected_slot['date']}.\n"
-    #     f"⏰ {selected_slot['time']}.\n\n"
-    #     f"What's the best number to reach you for appointment reminders?"
-    # )
 
     text = (
         f"Perfect! I have you scheduled for: 📅 {selected_slot['date']} at ⏰ {selected_slot['time']}."
@@ -1342,7 +1336,7 @@ def select_existing_patient_slot_handler(session_id: str, req: Dict) -> Dict:
         text,
         output_contexts=[
             create_context(get_session_path(
-                req), "select_existing_patient_slot", lifespan=0),
+                req), "select_existing_appointment_slot", lifespan=0),
             create_context(get_session_path(req), "collect_existing_phone_final", lifespan=5, parameters={
                 "appointment_date": selected_slot['date'],
                 "appointment_time": selected_slot['time'],
@@ -1556,16 +1550,16 @@ INTENT_HANDLERS = {
     "collect_phone_consultation": collect_phone_consultation_handler,
 
     "initial_assessment": initial_assessment_handler,
-    "select_appointment_slot": select_appointment_slot_handler,
+    "select_assessment_appointment_slot": select_assessment_appointment_slot_handler,
     "collect_assessment_phone_final": collect_assessment_phone_final_handler,
     "appointment_complete_response": intent_handler_with_user_input(appointment_complete_response_handler),
 
     "existing_patient_handler": existing_patient_handler,
     "collect_existing_patient_name": collect_existing_patient_name_handler,
     "collect_existing_patient_practitioner": collect_existing_patient_practitioner_handler,
-    "select_existing_patient_slot": select_existing_patient_slot_handler,
+    "select_existing_appointment_slot": select_existing_appointment_slot_handler,
     "collect_existing_phone_final": collect_existing_phone_final_handler,
-    "select_time": select_appointment_slot_handler,
+    # "select_time": select_appointment_slot_handler,
     "confirm_appointment": intent_handler_with_user_input(appointment_complete_response_handler),
     # ... rest unchanged
 
@@ -1657,7 +1651,7 @@ def fallback_handler(session_id: str, req: Dict) -> Dict:
         return select_new_visit_type_handler(session_id, req)
 
     elif intent_name == "select_time":
-        return select_appointment_slot_handler(session_id, req)
+        return select_assessment_appointment_slot_handler(session_id, req)
 
     elif intent_name == "confirm_appointment":
         return appointment_complete_response_handler(session_id, req)
@@ -1698,8 +1692,8 @@ def fallback_handler(session_id: str, req: Dict) -> Dict:
         return collect_new_patient_state_handler(session_id, req)
     elif "collect_new_patient_insurance" in context_names:
         return collect_new_patient_insurance_handler(session_id, req)
-    elif "select_appointment_slot" in context_names:
-        return select_appointment_slot_handler(session_id, req)
+    elif "select_assessment_appointment_slot" in context_names:
+        return select_assessment_appointment_slot_handler(session_id, req)
 
     # Default fallback
     text = (
