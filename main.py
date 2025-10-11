@@ -1409,7 +1409,7 @@ INTENT_HANDLERS = {
     "start": welcome_handler,
     "appointment_entry": appointment_entry_handler,
 
-    "new_patient_handler": new_patient_handler,
+    "new_patient": new_patient_handler,
     "collect_new_patient_name": collect_new_patient_name_handler,
     "collect_new_patient_state": collect_new_patient_state_handler,
     "collect_new_patient_insurance": collect_new_patient_insurance_handler,
@@ -1418,18 +1418,16 @@ INTENT_HANDLERS = {
     "phone_consultation": phone_consultation_handler,
     "collect_phone_consultation": collect_phone_consultation_handler,
 
-    "initial_assessment_handler": initial_assessment_handler,
-    "select_appointment_slot_handler": select_appointment_slot_handler,
-    "collect_assessment_phone_final_handler": collect_assessment_phone_final_handler,
-    "appointment_complete_response_handler": appointment_complete_response_handler,
+    "initial_assessment": initial_assessment_handler,
+    "select_appointment_slot": select_appointment_slot_handler,
+    "collect_assessment_phone_final": collect_assessment_phone_final_handler,
+    "appointment_complete_response": appointment_complete_response_handler,
 
     "existing_patient_handler": existing_patient_handler,
     "collect_existing_patient_name": collect_existing_patient_name_handler,
     "collect_existing_patient_practitioner": collect_existing_patient_practitioner_handler,
     "select_existing_patient_slot": select_existing_patient_slot_handler,
     "collect_existing_phone_final": collect_existing_phone_final_handler,
-
-
 
 
     "select_time": select_appointment_slot_handler,
