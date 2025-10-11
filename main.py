@@ -759,20 +759,7 @@ def select_new_visit_type_handler(session_id: str, req: Dict) -> Dict:
             "• Phone Consultation\n"
             "• Initial Assessment"
         )
-        suggestions = ["Phone Consultation", "Initial Assessment"]
-        return build_response(
-            text,
-            suggestions=suggestions,
-            output_contexts=[
-                create_context(
-                    get_session_path(req),
-                    "select_new_visit_type",
-                    lifespan=5,
-                    parameters=get_context_parameters(
-                        req, "select_new_visit_type")
-                )
-            ]
-        )
+
 
 # Ensure each handler always provides a fallback: e.g., instead of error returns, always guide the user back into the correct flow or offer to escalate.
 
@@ -795,16 +782,25 @@ def phone_consultation_handler(session_id: str, req: Dict) -> Dict:
         "What's the best number to reach you?"
     )
 
-    context = create_context(
-        get_session_path(req),
-        "collect_phone_consultation",
-        parameters={
-            "visit_type": "phone_consultation",
-            "patient_name": patient_name
-        }
+    return build_response(
+        text,
+        output_contexts=[
+            create_context(
+                get_session_path(req),
+                "collect_phone_consultation",
+                parameters={
+                    "visit_type": "phone_consultation",
+                    "patient_name": patient_name,
+                    "lifespan": 5
+                }
+            ),
+            create_context(
+                get_session_path(req),
+                "phone_consultation",
+                lifespan=0
+            )
+        ]
     )
-
-    return build_response(text, output_contexts=[context])
 
 
 def collect_phone_consultation_handler(session_id: str, req: Dict) -> Dict:
