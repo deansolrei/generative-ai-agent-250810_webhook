@@ -878,7 +878,7 @@ def select_appointment_slot_handler(session_id: str, req: Dict) -> Dict:
     )
 
 
-def collect_assessmentphone_final_handler(session_id: str, req: Dict) -> Dict:
+def collect_assessment_phone_final_handler(session_id: str, req: Dict) -> Dict:
     """Collect and validate phone number, then confirm appointment"""
 
     phone_input = req['queryResult']['queryText'].strip()
@@ -1420,7 +1420,7 @@ INTENT_HANDLERS = {
 
     "initial_assessment_handler": initial_assessment_handler,
     "select_appointment_slot_handler": select_appointment_slot_handler,
-    "collect_assessment_phone_final_handler": collect_assessmentphone_final_handler,
+    "collect_assessment_phone_final_handler": collect_assessment_phone_final_handler,
     "appointment_complete_response_handler": appointment_complete_response_handler,
 
     "existing_patient_handler": existing_patient_handler,
@@ -1451,33 +1451,68 @@ INTENT_HANDLERS = {
 
 
 def process_message(request_data: dict) -> dict:
+    """Main webhook handler - routes to appropriate handlers"""
+
     query_result = request_data.get("queryResult", {})
     session_id = extract_session_id(request_data)
     user_input = query_result.get("queryText", "").strip().lower()
     intent_name = query_result.get("intent", {}).get("displayName", "")
     contexts = query_result.get("outputContexts", [])
+
+    # Log for debugging
     logger.info(f"Intent: '{intent_name}', User said: '{user_input}'")
     logger.info(
         f"Active contexts: {[c['name'].split('/')[-1] for c in contexts]}")
 
-    # Context-based routing first
+    # ===== CONTEXT-BASED ROUTING MUST COME FIRST! =====
+    # This overrides intent matching when specific contexts are active
+
     for context in contexts:
         context_name = context['name'].split('/')[-1]
-        # [Include your original context-based routing here, but always fallback to a guiding question]
-        # e.g., appointment_complete, collect_assessment_phone_final, etc.
 
+        # After appointment is complete
+        if context_name == "appointment_complete":
+            if user_input in ["no", "no thanks", "i'm good", "i'm all set", "all set",
+                              "that's all", "nothing", "nope", "no, i'm all set"]:
+                return appointment_complete_response_handler(session_id, request_data)
+            elif user_input in ["yes", "schedule another", "another appointment"]:
+                return appointment_entry_handler(session_id, request_data)
+            elif "cancel" in user_input:
+                return cancellation_request_handler(session_id, request_data)
 
-# Regular intent routing
+        # Phone collection
+        elif context_name == "collect_assessment_phone_final":
+            import re
+            phone_digits = re.sub(r'\D', '', user_input)
+            if len(phone_digits) >= 10:
+                logger.info(f"Phone number detected: {user_input}")
+                return collect_assessment_phone_final_handler(session_id, request_data)
+
+        # Add other context handlers here...
+
+    # ============================================================================
+    # CANCELLATION HANDLER
+    # ============================================================================
+    def cancellation_request_handler(session_id: str, req: Dict) -> Dict:
+        """Handles appointment cancellation requests."""
+        text = (
+            "We're sorry to hear you'd like to cancel your appointment. "
+            "To proceed, please call our office at "
+            f"{CLINIC_INFO['phone']} or reply here with your reason for cancellation."
+        )
+        suggestions = ["Call Office", "Reschedule",
+                       "No longer need appointment"]
+        return build_response(text, suggestions)
+
+    # Regular intent routing
     if intent_name == "schedule_appointment":
         return appointment_entry_handler(session_id, request_data)
-
-# NEW PATIENT intent routing
 
     elif intent_name == "new_patient":
         return new_patient_handler(session_id, request_data)
 
-    elif intent_name == "collect_new_patient_name":
-        return collect_new_patient_name_handler(session_id, request_data)
+    elif intent_name == "existing_patient":
+        return existing_patient_handler(session_id, request_data)
 
     elif intent_name == "collect_state":
         return collect_new_patient_state_handler(session_id, request_data)
@@ -1488,11 +1523,6 @@ def process_message(request_data: dict) -> dict:
     elif intent_name == "select_new_visit_type":
         return select_new_visit_type_handler(session_id, request_data)
 
-# EXISTING PATIENT intent routing
-
-    elif intent_name == "existing_patient":
-        return existing_patient_handler(session_id, request_data)
-
     elif intent_name == "select_time":
         return select_appointment_slot_handler(session_id, request_data)
 
@@ -1500,11 +1530,7 @@ def process_message(request_data: dict) -> dict:
         return appointment_complete_response_handler(session_id, request_data)
 
     elif intent_name == "collect_phone":
-        return collect_existing_phone_final_handler(session_id, request_data)
-
-        # Intent routing
-    handler = INTENT_HANDLERS.get(intent_name, fallback_handler)
-    return handler(session_id, request_data)
+        return collect_assessment_phone_final_handler(session_id, request_data)
 
 # ============================================================================
 # FALLBACK
@@ -1536,22 +1562,29 @@ def fallback_handler(session_id: str, req: Dict) -> Dict:
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    """Main webhook handler with enhanced error handling"""
     try:
         req = request.get_json()
         session_id = extract_session_id(req)
         intent_name = req.get('queryResult', {}).get(
             'intent', {}).get('displayName', '')
         query_text = req.get('queryResult', {}).get('queryText', '')
+
         logger.info(
             f"Session: {session_id}, Intent: {intent_name}, Query: {query_text}")
-        response = process_message(req)
 
+        # Route to appropriate handler
+        handler = INTENT_HANDLERS.get(intent_name, fallback_handler)
+        response = handler(session_id, req)
+
+        # Ensure response is valid
         if not isinstance(response, dict):
-            logger.error(f"Invalid response from handler")
+            logger.error(f"Invalid response from handler: {handler.__name__}")
             response = build_response(
                 "I encountered an error. Please try again.")
 
         return jsonify(response)
+
     except Exception as e:
         logger.exception("Webhook error")
         return jsonify(build_response(
